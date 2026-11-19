@@ -2,7 +2,7 @@
 
 **A firewall for AI agents.** Identity, permissions, approvals and audit between your agent and its tools.
 
-![License](https://img.shields.io/badge/license-Apache%202.0-blue) ![Python](https://img.shields.io/badge/python-3.10%2B-blue) ![Status](https://img.shields.io/badge/status-alpha-orange)
+[![PyPI](https://img.shields.io/pypi/v/securegent)](https://pypi.org/project/securegent/) ![License](https://img.shields.io/badge/license-Apache%202.0-blue) ![Python](https://img.shields.io/badge/python-3.10%2B-blue) ![Status](https://img.shields.io/badge/status-alpha-orange)
 
 ![Securegent dashboard: normal work let through, prompt-injection attacks stopped, a large payment waiting for approval, then every agent stopped](https://raw.githubusercontent.com/Pratix005/Securegent/main/docs/demo.gif)
 
