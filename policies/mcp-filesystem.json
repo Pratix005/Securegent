@@ -1,0 +1,51 @@
+{
+  "description": "Policy for the official MCP filesystem server (@modelcontextprotocol/server-filesystem), run with --server-name filesystem. Reading is allowed except secrets; writing only inside a 'drafts' folder; moving files needs approval; anything else is denied.",
+  "rules": [
+    {
+      "id": "no-secret-paths",
+      "tool": "filesystem.*",
+      "when": [{ "arg": "path", "op": "matches",
+                 "value": ".*(\\.env|id_rsa|id_ed25519|\\.pem|\\.key|\\.pfx|secret|password|credential|token).*" }],
+      "effect": "deny",
+      "reason": "files that look like secrets or credentials are off limits"
+    },
+    {
+      "id": "no-secret-paths-multi",
+      "tool": "filesystem.read_multiple_files",
+      "when": [{ "arg": "paths", "op": "matches",
+                 "value": ".*(\\.env|id_rsa|id_ed25519|\\.pem|\\.key|\\.pfx|secret|password|credential|token).*" }],
+      "effect": "deny",
+      "reason": "files that look like secrets or credentials are off limits"
+    },
+    {
+      "id": "read-only",
+      "tool": [
+        "filesystem.list_allowed_directories", "filesystem.list_directory",
+        "filesystem.list_directory_with_sizes", "filesystem.directory_tree",
+        "filesystem.search_files", "filesystem.get_file_info",
+        "filesystem.read_file", "filesystem.read_text_file", "filesystem.read_media_file",
+        "filesystem.read_multiple_files"
+      ],
+      "effect": "allow",
+      "reason": "reading and browsing is fine"
+    },
+    {
+      "id": "write-in-drafts",
+      "tool": ["filesystem.write_file", "filesystem.append_file", "filesystem.edit_file",
+               "filesystem.create_directory"],
+      "when": [
+        { "arg": "path", "op": "matches", "value": ".*[\\\\/]drafts([\\\\/].*)?" },
+        { "arg": "path", "op": "not_contains", "value": ".." }
+      ],
+      "limit": { "max": 50, "window_seconds": 3600 },
+      "effect": "allow",
+      "reason": "writing inside a drafts folder is fine (max 50 writes per hour)"
+    },
+    {
+      "id": "move-copy-needs-approval",
+      "tool": ["filesystem.move_file", "filesystem.copy_file"],
+      "effect": "approve",
+      "reason": "moving, renaming or copying files needs a human"
+    }
+  ]
+}

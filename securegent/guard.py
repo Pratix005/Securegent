@@ -56,6 +56,22 @@ class Guard:
         return wrap
 
     def call(self, token: str, tool: str, **args):
+        """Check the call and, if allowed, run the registered tool function."""
+        if tool not in self._tools:
+            self._log({"tool": tool, "args": args}, DENY, "unknown tool")
+            raise Blocked(f"unknown tool '{tool}'")
+        entry, decision, claims = self._authorize(token, tool, args)
+        result = self._tools[tool](**args)
+        self._record(entry, decision, claims, args)
+        return result
+
+    def check(self, token: str, tool: str, args: dict) -> None:
+        """Check the call without running anything (for proxies that forward the call
+        elsewhere). Returns if allowed (and logs it); raises Blocked otherwise."""
+        entry, decision, claims = self._authorize(token, tool, args)
+        self._record(entry, decision, claims, args)
+
+    def _authorize(self, token: str, tool: str, args: dict):
         entry = {"tool": tool, "args": args}
 
         # 1. Who is this? (identity)
@@ -71,10 +87,6 @@ class Guard:
             reason = f"tool '{tool}' not in token scopes {claims['scopes']}"
             self._log(entry, DENY, reason)
             raise Blocked(reason)
-
-        if tool not in self._tools:
-            self._log(entry, DENY, "unknown tool")
-            raise Blocked(f"unknown tool '{tool}'")
 
         # 3. Is this specific action allowed? (policy)
         decision = self.policy.evaluate(claims["sub"], tool, args)
@@ -97,13 +109,14 @@ class Guard:
                 raise Blocked(f"human approval refused: {decision.reason}")
             entry["approved_by_human"] = True
 
-        # 4. Execute and record
-        result = self._tools[tool](**args)
+        return entry, decision, claims
+
+    def _record(self, entry: dict, decision: Decision, claims: dict, args: dict) -> None:
+        """Count the call toward running limits and write the ALLOW to the audit log."""
         if decision.limit:
             self._usage.append((time.time(), claims["sub"], decision.rule,
                                 self._limit_value(decision.limit, args)))
         self._log(entry, ALLOW, decision.reason)
-        return result
 
     @staticmethod
     def _limit_value(limit: dict, args: dict) -> float:

@@ -29,6 +29,13 @@ _OPS = {
 }
 
 
+def _matches_any(name: str, patterns) -> bool:
+    """A rule's "agent"/"tool" may be one glob pattern or a list of them."""
+    if isinstance(patterns, str):
+        patterns = [patterns]
+    return any(fnmatch(name, p) for p in patterns)
+
+
 @dataclass
 class Decision:
     effect: str
@@ -70,9 +77,9 @@ class Policy:
 
     def evaluate(self, agent_id: str, tool: str, args: dict) -> Decision:
         for rule in self.rules:
-            if not fnmatch(agent_id, rule.get("agent", "*")):
+            if not _matches_any(agent_id, rule.get("agent", "*")):
                 continue
-            if not fnmatch(tool, rule.get("tool", "*")):
+            if not _matches_any(tool, rule.get("tool", "*")):
                 continue
             if all(self._check(cond, args) for cond in rule.get("when", [])):
                 return Decision(rule["effect"], rule.get("reason", ""), rule.get("id"), rule.get("limit"))

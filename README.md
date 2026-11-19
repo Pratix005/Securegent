@@ -67,6 +67,44 @@ Rule conditions: `equals`, `not_equals`, `contains`, `not_contains`, `startswith
 Once the total in the window would go over `max`, the call needs human approval. This
 stops "ten payments of Rs 95,000" style splitting.
 
+## MCP proxy: protect any AI app with no code changes
+
+MCP is how AI apps (Claude Desktop, Claude Code, Cursor...) connect to tools like your
+files, GitHub or databases. Securegent can sit in the middle:
+
+```
+AI app  ──►  Securegent MCP proxy  ──►  any stdio MCP server
+             checks every tools/call against your policy, logs it, blocks it if needed
+```
+
+```
+python -m securegent.mcp --policy policies/mcp-filesystem.json --server-name filesystem \
+    -- npx -y @modelcontextprotocol/server-filesystem C:/work
+```
+
+Everything after `--` is the normal command for the MCP server. Point your AI app at the
+proxy command instead. For Claude Code:
+
+```
+claude mcp add files -- C:/path/to/.venv/Scripts/python -m securegent.mcp \
+    --policy C:/path/to/policies/mcp-filesystem.json --server-name filesystem \
+    -- npx -y @modelcontextprotocol/server-filesystem C:/work
+```
+
+- Policies see tools as `<server-name>.<tool>`, e.g. `filesystem.write_file`, so one policy
+  file can cover many servers.
+- Blocked calls never reach the server. The AI gets an error result explaining why.
+- Tools outside the agent's scope are hidden from the AI (`--scopes`, `--show-all-tools`).
+- `--kill-switch FILE`: while that file exists, every call is blocked.
+- Every decision goes to the audit log (default `~/.securegent/audit.jsonl`).
+- Calls that need approval are refused for now (approvals will come with the web dashboard).
+
+`policies/mcp-filesystem.json` is a ready-made policy for the official filesystem server:
+reading is allowed except secrets (`.env`, keys, credentials), writing only inside a
+`drafts` folder (max 50 writes per hour), moving or copying files needs approval, everything
+else is denied. Tested live against the official server (16 tools): secrets blocked, writes
+outside `drafts` and `drafts/../` tricks blocked, files verified untouched afterwards.
+
 ## Red-team suite: attack your agent, get a score
 
 Securegent ships with 10 prompt-injection attacks (fake CFO wire, vendor bank-detail swap,
@@ -124,7 +162,9 @@ python -m unittest discover tests -v
 | `securegent/guard.py` | Checkpoint every tool call passes through, running limits, audit log |
 | `securegent/redteam/` | Attack scenarios, runner and scoring (`python -m securegent.redteam`) |
 | `securegent/backends/` | Agent loops for a local Ollama model (free) and Claude |
+| `securegent/mcp/` | MCP proxy (`python -m securegent.mcp`) |
 | `policies.json` | Example rules for a finance agent |
+| `policies/mcp-filesystem.json` | Example rules for the official MCP filesystem server |
 | `demo.py` | Scripted prompt-injection attack |
 | `agent_demo.py` | Real AI agent (Claude or local Ollama model) behind the guard |
 
@@ -132,7 +172,8 @@ python -m unittest discover tests -v
 
 - [x] **Prompt-injection test suite:** run attack scenarios against your agent and get a security score
 - [ ] More attacks: multi-step, multilingual, tool-output poisoning; community-contributed scenarios
-- [ ] **MCP security proxy:** apply Securegent policies to any MCP server with no code changes
+- [x] **MCP security proxy:** apply Securegent policies to any stdio MCP server with no code changes
+- [ ] MCP proxy: HTTP transport, approvals through the dashboard
 - [ ] **Web dashboard:** live audit log, approvals and kill switch in the browser
 - [ ] **Policy packs:** ready-made rules for banking, healthcare, HR, DevOps, and India's DPDP Act
 - [ ] **Taint tracking:** stricter rules for actions influenced by untrusted content

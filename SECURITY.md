@@ -26,3 +26,7 @@ Securegent is in early development (0.x). Only the latest release gets security 
 - If `SECUREGENT_SECRET` is not set, a random signing key is generated per process.
 - The audit log is a local file and is not tamper-proof.
 - Policies check tool arguments only; they don't yet track where data came from (taint tracking is on the roadmap).
+- Path rules match the text of the path the AI sends. They don't resolve symlinks or
+  `..` (the sample policy rejects `..` in write paths). Keep the MCP server itself limited
+  to the folders it needs.
+- The MCP proxy supports the stdio transport only, and refuses calls that need human approval.
