@@ -24,4 +24,8 @@ dependencies = []   # the core has no dependencies
 claude = ["anthropic>=2.10.0"]
 
 [tool.setuptools]
-packages = ["securegent", "securegent.backends", "securegent.redteam", "securegent.mcp"]
+packages = ["securegent", "securegent.backends", "securegent.redteam", "securegent.mcp",
+            "securegent.dashboard"]
+
+[tool.setuptools.package-data]
+"securegent.dashboard" = ["index.html", "static/fonts/*.woff2", "static/fonts/*.txt"]

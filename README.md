@@ -95,9 +95,29 @@ claude mcp add files -- C:/path/to/.venv/Scripts/python -m securegent.mcp \
   file can cover many servers.
 - Blocked calls never reach the server. The AI gets an error result explaining why.
 - Tools outside the agent's scope are hidden from the AI (`--scopes`, `--show-all-tools`).
-- `--kill-switch FILE`: while that file exists, every call is blocked.
-- Every decision goes to the audit log (default `~/.securegent/audit.jsonl`).
-- Calls that need approval are refused for now (approvals will come with the web dashboard).
+- `--approvals`: calls that need approval wait for you to approve or deny them in the
+  dashboard (`--approval-timeout`, default 120 s; no answer means denied). Without it they
+  are refused. Other requests keep flowing while one waits.
+- Kill switch: while `~/.securegent/KILL_SWITCH` exists (the dashboard's "Stop all agents"
+  button creates it), every call is blocked.
+- Every decision goes to the audit log (`~/.securegent/audit.jsonl`). `--state-dir` moves all of these.
+
+## Dashboard
+
+```
+python -m securegent.dashboard --open
+```
+
+A local console for your agents: a timeline of every tool call in the last hour, a list of
+agents with what each was allowed and stopped, requests waiting for your decision, the full
+log grouped by day, and a button that stops every agent. Keyboard: `/` search, `j` `k` move,
+`Enter` details, `p` pause.
+
+It can approve actions, so it is locked down: it listens on `127.0.0.1` only, every API call
+needs a random token from the link printed in your terminal, it rejects foreign `Host` and
+`Origin` headers (DNS rebinding, cross-site requests), and it renders all log text as plain
+text under a strict Content-Security-Policy. The font (Recursive, SIL OFL) is bundled, so the
+page loads nothing from the internet.
 
 `policies/mcp-filesystem.json` is a ready-made policy for the official filesystem server:
 reading is allowed except secrets (`.env`, keys, credentials), writing only inside a
@@ -163,6 +183,8 @@ python -m unittest discover tests -v
 | `securegent/redteam/` | Attack scenarios, runner and scoring (`python -m securegent.redteam`) |
 | `securegent/backends/` | Agent loops for a local Ollama model (free) and Claude |
 | `securegent/mcp/` | MCP proxy (`python -m securegent.mcp`) |
+| `securegent/dashboard/` | Local web console (`python -m securegent.dashboard`) |
+| `securegent/approvals.py` | Human approvals shared between the proxy and the dashboard |
 | `policies.json` | Example rules for a finance agent |
 | `policies/mcp-filesystem.json` | Example rules for the official MCP filesystem server |
 | `demo.py` | Scripted prompt-injection attack |
@@ -173,8 +195,8 @@ python -m unittest discover tests -v
 - [x] **Prompt-injection test suite:** run attack scenarios against your agent and get a security score
 - [ ] More attacks: multi-step, multilingual, tool-output poisoning; community-contributed scenarios
 - [x] **MCP security proxy:** apply Securegent policies to any stdio MCP server with no code changes
-- [ ] MCP proxy: HTTP transport, approvals through the dashboard
-- [ ] **Web dashboard:** live audit log, approvals and kill switch in the browser
+- [x] **Dashboard:** live log, activity timeline, per-agent view, approvals and kill switch
+- [ ] MCP proxy: HTTP transport
 - [ ] **Policy packs:** ready-made rules for banking, healthcare, HR, DevOps, and India's DPDP Act
 - [ ] **Taint tracking:** stricter rules for actions influenced by untrusted content
 - [ ] **Standard audit format** that SIEMs (Splunk, Wazuh) can ingest

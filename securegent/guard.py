@@ -1,6 +1,7 @@
 """The Guard: the checkpoint every agent tool call must pass through."""
 
 import json
+import threading
 import time
 from pathlib import Path
 from typing import Callable
@@ -26,16 +27,27 @@ class AuditLog:
     def __init__(self, path: str | Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
 
     def write(self, entry: dict) -> None:
         entry = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), **entry}
-        with self.path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, default=str) + "\n")
+        line = json.dumps(entry, default=str) + "\n"
+        with self._lock, self.path.open("a", encoding="utf-8") as f:
+            f.write(line)
 
-    def read(self) -> list[dict]:
+    def read(self, last: int | None = None) -> list[dict]:
         if not self.path.exists():
             return []
-        return [json.loads(line) for line in self.path.read_text(encoding="utf-8").splitlines() if line]
+        lines = [l for l in self.path.read_text(encoding="utf-8").splitlines() if l.strip()]
+        if last is not None:
+            lines = lines[-last:]
+        entries = []
+        for line in lines:
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError:    # a half-written line from another process
+                continue
+        return entries
 
 
 class Guard:
@@ -47,6 +59,7 @@ class Guard:
         self.approver = approver
         self._tools: dict[str, Callable] = {}
         self._usage: list[tuple[float, str, str, float]] = []   # (time, agent, rule, value)
+        self._usage_lock = threading.Lock()   # calls may be checked from several threads
 
     def tool(self, name: str):
         """Decorator to register a function as a guarded tool."""
@@ -92,9 +105,15 @@ class Guard:
         decision = self.policy.evaluate(claims["sub"], tool, args)
         entry["rule"] = decision.rule
 
-        # 3b. Running totals: stops "10 payments of 95,000" style splitting
+        # 3b. Running totals: stops "10 payments of 95,000" style splitting.
+        # Checking and reserving happen under one lock, so two calls arriving at the
+        # same moment can't both squeeze under the limit.
         if decision.effect == ALLOW and decision.limit:
-            over = self._over_limit(claims["sub"], decision, args)
+            value = self._limit_value(decision.limit, args)
+            with self._usage_lock:
+                over = self._over_limit(claims["sub"], decision, args)
+                if not over:
+                    self._usage.append((time.time(), claims["sub"], decision.rule, value))
             if over:
                 decision = Decision(APPROVE, over, decision.rule, decision.limit)
 
@@ -108,14 +127,15 @@ class Guard:
                 self._log(entry, DENY, f"approval refused: {decision.reason}")
                 raise Blocked(f"human approval refused: {decision.reason}")
             entry["approved_by_human"] = True
+            if decision.limit:   # human-approved spending still counts toward the total
+                with self._usage_lock:
+                    self._usage.append((time.time(), claims["sub"], decision.rule,
+                                        self._limit_value(decision.limit, args)))
 
         return entry, decision, claims
 
     def _record(self, entry: dict, decision: Decision, claims: dict, args: dict) -> None:
-        """Count the call toward running limits and write the ALLOW to the audit log."""
-        if decision.limit:
-            self._usage.append((time.time(), claims["sub"], decision.rule,
-                                self._limit_value(decision.limit, args)))
+        """Write the ALLOW to the audit log (limit usage was reserved in _authorize)."""
         self._log(entry, ALLOW, decision.reason)
 
     @staticmethod

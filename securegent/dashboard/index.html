@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>securegent</title>
+<style nonce="{{NONCE}}">
+  /* Recursive (Arrow Type): one variable font whose "Casual" axis is drawn from single-stroke
+     brush lettering. Text runs half-casual; data (times, tools, paths, amounts) runs fully casual
+     and monospaced, so it reads like someone's handwritten console notes.
+     Bundled (SIL Open Font License); nothing is fetched from a CDN. */
+  @font-face { font-family: "Recursive"; font-weight: 300 1000; font-style: oblique 0deg 15deg; font-display: swap;
+               src: url(/static/fonts/Recursive-Variable.woff2) format("woff2"); }
+
+  :root {
+    --bg: #ecebe6; --paper: #f7f6f2; --ink: #171614; --mid: #57544d; --low: #8b877e; --line: #d4d0c6;
+    --hover: #e4e2db; --stop: #e8470c; --stop-ink: #b83605; --stop-soft: #fbe3d8; --wait: #f2b705; --wait-soft: #fbf0cc;
+    --sans: "Recursive", "Helvetica Neue", Arial, sans-serif;
+    --mono: "Recursive", Consolas, monospace;
+    --text-axes: "CASL" 0.6, "MONO" 0;
+    --data-axes: "CASL" 1, "MONO" 1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121211; --paper: #191917; --ink: #e8e6df; --mid: #a7a399; --low: #75726a; --line: #2c2b28;
+      --hover: #22211f; --stop: #ff6a2c; --stop-ink: #ff8f5e; --stop-soft: #2e1a10; --wait: #f2b705; --wait-soft: #2a2410;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body { margin: 0; color: var(--ink); font: 400 14px/1.5 var(--sans); font-variation-settings: var(--text-axes); }
+  button, input { font-variation-settings: var(--text-axes); }
+  /* Everything that shows data uses the monospaced, fully casual setting. */
+  kbd, .where, .status, .axis, .agents .nm, .req-tool, .req-args, .req-foot, .chip, .tm, .tool, .args, .more, footer {
+    font-variation-settings: var(--data-axes);
+  }
+  :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+  .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  button { font: 500 13px/1 var(--sans); color: var(--ink); background: none; border: 1px solid var(--line);
+           border-radius: 3px; height: 30px; padding: 0 10px; cursor: pointer; }
+  button:hover { border-color: var(--mid); }
+  button:disabled { opacity: .4; cursor: default; }
+  @media (pointer: coarse) { button { height: 44px; } }
+  kbd { font: 11px var(--mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; }
+
+  /* top line */
+  .top { display: flex; align-items: center; gap: 18px; padding: 12px 24px; border-bottom: 1px solid var(--line);
+         background: var(--paper); flex-wrap: wrap; }
+  .word { font-weight: 800; font-size: 18px; letter-spacing: -0.02em; }
+  .where { font: 12px var(--mono); color: var(--low); margin-right: auto; }
+  .status { font: 12px var(--mono); color: var(--mid); display: flex; align-items: center; gap: 7px; }
+  .status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--low); }
+  .status.ok::before { background: var(--ink); }
+  .status.tick::before { background: var(--stop); }
+  .status.stale { color: var(--ink); } .status.stale::before { background: var(--wait); }
+  .status.off { color: var(--stop-ink); } .status.off::before { background: var(--stop); }
+  .stopbtn { background: var(--stop); border-color: var(--stop); color: #fff; font-weight: 600; }
+  .stopbtn:hover { background: var(--stop-ink); border-color: var(--stop-ink); }
+  @media (max-width: 640px) { .top { padding: 10px 16px; } .where { display: none; } .word { margin-right: auto; } }
+
+  .halted { background: var(--stop); color: #fff; padding: 10px 24px; display: flex; align-items: center; gap: 16px;
+            justify-content: space-between; flex-wrap: wrap; font-weight: 600; }
+  .halted button { color: #fff; border-color: rgba(255, 255, 255, .7); }
+  .halted button:hover { background: #fff; color: var(--stop-ink); }
+
+  /* activity strip */
+  .activity { padding: 14px 24px 12px; border-bottom: 1px solid var(--line); background: var(--paper); }
+  .activity-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap;
+                   margin-bottom: 8px; font-size: 13px; color: var(--mid); }
+  .activity-head strong { color: var(--ink); font-weight: 600; }
+  .activity-head .s { color: var(--stop-ink); font-weight: 600; }
+  .strip { position: relative; height: 34px; border-bottom: 1px solid var(--mid); }
+  .strip i { position: absolute; bottom: 0; width: 2px; height: 14px; background: var(--ink); opacity: .55; }
+  .strip i.s { height: 30px; background: var(--stop); opacity: 1; }
+  .axis { display: flex; justify-content: space-between; font: 11px var(--mono); color: var(--low); margin-top: 4px; }
+  @media (max-width: 640px) { .activity { padding: 12px 16px; } }
+
+  /* layout */
+  .main { display: grid; grid-template-columns: 230px minmax(0, 1fr); min-height: calc(100vh - 160px); }
+  @media (max-width: 860px) { .main { grid-template-columns: 1fr; } }
+  aside { border-right: 1px solid var(--line); padding: 18px 0; }
+  @media (max-width: 860px) { aside { border-right: none; border-bottom: 1px solid var(--line); padding: 12px 0; } }
+  .side-h { font-size: 12px; font-weight: 600; color: var(--mid); padding: 0 24px 8px; }
+  .agents { list-style: none; margin: 0; padding: 0; }
+  .agents button { display: block; width: 100%; height: auto; text-align: left; border: none; border-radius: 0;
+                   padding: 8px 24px; border-left: 2px solid transparent; }
+  .agents button:hover { background: var(--hover); }
+  .agents button[aria-pressed="true"] { border-left-color: var(--ink); background: var(--hover); }
+  .agents .nm { display: block; font: 500 13px var(--mono); overflow-wrap: anywhere; }
+  .agents .ct { display: block; margin-top: 2px; font-size: 12px; color: var(--low); font-weight: 400; }
+  .agents .ct b { color: var(--stop-ink); font-weight: 600; }
+  @media (max-width: 860px) { .agents { display: flex; overflow-x: auto; } .agents button { white-space: nowrap; padding: 6px 16px; }
+                              .side-h { padding: 0 16px 6px; } }
+
+  .content { padding: 18px 24px 40px; min-width: 0; }
+  @media (max-width: 640px) { .content { padding: 14px 16px 32px; } }
+
+  /* waiting for a decision */
+  .waiting { margin-bottom: 26px; }
+  .waiting h2, .log-h h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .req { margin-top: 10px; background: var(--paper); border: 1px solid var(--line); border-left: 4px solid var(--wait); }
+  .req-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 12px 16px; flex-wrap: wrap; }
+  .req-tool { font: 600 14px var(--mono); }
+  .req-why { margin-top: 2px; color: var(--mid); }
+  .req-who { margin-top: 2px; font-size: 12px; color: var(--low); }
+  .req-args { margin: 0; padding: 10px 16px; border-top: 1px solid var(--line); font: 12.5px/1.6 var(--mono);
+              white-space: pre-wrap; word-break: break-word; background: var(--bg); }
+  .req-foot { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-top: 1px solid var(--line);
+              font: 12px var(--mono); color: var(--low); }
+  .req-foot .t { flex: 1; height: 2px; background: var(--line); position: relative; }
+  .req-foot .t b { position: absolute; inset: 0; background: var(--wait); transform-origin: left; transition: transform 1s linear; }
+  .req .acts { display: flex; gap: 8px; }
+  .approve { background: var(--ink); border-color: var(--ink); color: var(--paper); font-weight: 600; }
+  .approve:hover { opacity: .85; }
+  .deny:hover { border-color: var(--stop); color: var(--stop-ink); }
+
+  /* log */
+  .log-h { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .seg button { border-radius: 0; margin-left: -1px; }
+  .seg button:first-child { border-radius: 3px 0 0 3px; margin-left: 0; }
+  .seg button:last-child { border-radius: 0 3px 3px 0; }
+  .seg button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--paper); position: relative; }
+  .find { font: 13px var(--sans); color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 3px;
+          height: 30px; padding: 0 10px; width: 220px; }
+  .find:focus { outline: none; border-color: var(--mid); }
+  .chip { font: 12px var(--mono); color: var(--mid); }
+  .chip button { height: 22px; padding: 0 6px; font-size: 11px; margin-left: 4px; }
+  @media (max-width: 640px) { .find { width: 100%; } .controls { width: 100%; } }
+
+  .day { font: 600 12px var(--sans); color: var(--mid); padding: 16px 0 6px; border-bottom: 1px solid var(--ink); }
+  .day span { font-weight: 400; color: var(--low); margin-left: 6px; }
+  .row { display: grid; grid-template-columns: 70px 12px minmax(0, 1.1fr) minmax(0, 1fr); gap: 12px; align-items: baseline;
+         padding: 8px 6px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .row:hover, .row:focus-within { background: var(--hover); }
+  .row:focus { outline: none; }
+  .row:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+  .row.new { animation: fade 1.4s ease-out; }
+  .row.s.new { animation: fade-s 1.6s ease-out; }
+  .tm { font: 12px var(--mono); color: var(--low); }
+  .mk { width: 8px; height: 8px; align-self: center; border: 1.5px solid var(--low); border-radius: 50%; }
+  .row.s .mk { background: var(--stop); border-color: var(--stop); border-radius: 1px; }
+  .tool { font: 500 13px var(--mono); overflow-wrap: anywhere; }
+  .args { display: block; font: 12px var(--mono); color: var(--low); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .why { color: var(--mid); overflow-wrap: anywhere; }
+  .row.s .why { color: var(--stop-ink); }
+  .ok-by { display: block; font-size: 12px; color: var(--ink); font-weight: 500; }
+  .more { grid-column: 3 / -1; margin: 6px 0 2px; padding: 10px 12px; background: var(--paper); border: 1px solid var(--line);
+          font: 12.5px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; cursor: text; }
+  @media (max-width: 640px) {
+    .row { grid-template-columns: 62px 10px minmax(0, 1fr); }
+    .row .why { grid-column: 3; }
+    .more { grid-column: 1 / -1; }
+  }
+  .none { padding: 40px 6px; color: var(--mid); }
+  @keyframes fade { from { background: var(--hover); } to { background: transparent; } }
+  @keyframes fade-s { from { background: var(--stop-soft); } to { background: transparent; } }
+
+  footer { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 24px;
+           border-top: 1px solid var(--line); font: 11.5px var(--mono); color: var(--low); }
+  footer .keys { display: flex; gap: 14px; flex-wrap: wrap; }
+  footer .err { color: var(--stop-ink); }
+  @media (max-width: 640px) { footer { padding: 12px 16px; } footer .keys { display: none; } }
+
+  dialog { border: 1px solid var(--line); border-radius: 4px; background: var(--paper); color: var(--ink); padding: 20px;
+           width: min(420px, calc(100vw - 32px)); }
+  dialog::backdrop { background: rgba(0, 0, 0, .35); }
+  dialog h3 { margin: 0 0 6px; font-size: 16px; }
+  dialog p { margin: 0 0 18px; color: var(--mid); }
+  dialog .acts { display: flex; justify-content: flex-end; gap: 8px; }
+
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <span class="word">securegent</span>
+  <span class="where" id="where">127.0.0.1</span>
+  <span id="status" class="status">connecting</span>
+  <button id="pause" type="button" aria-pressed="false" title="Pause updates (p)">Pause</button>
+  <button id="stop" class="stopbtn" type="button">Stop all agents</button>
+</header>
+<div id="halted" class="halted" role="alert" hidden>
+  <span>All agents are stopped. Every tool call is refused until you resume.</span>
+  <button id="resume" type="button">Resume</button>
+</div>
+
+<section class="activity" aria-label="Activity in the last hour">
+  <div class="activity-head">
+    <span id="summary">Loading…</span>
+    <span id="range">last 60 minutes</span>
+  </div>
+  <div class="strip" id="strip" aria-hidden="true"></div>
+  <div class="axis" aria-hidden="true"><span id="ax0"></span><span id="ax1"></span><span id="ax2"></span><span>now</span></div>
+</section>
+
+<div class="main">
+  <aside aria-labelledby="agents-h">
+    <div class="side-h" id="agents-h">Agents</div>
+    <ul class="agents" id="agents"></ul>
+  </aside>
+
+  <main class="content">
+    <section class="waiting" id="waiting" aria-labelledby="waiting-h" hidden>
+      <h2 id="waiting-h">Needs your decision</h2>
+      <div id="reqs"></div>
+    </section>
+
+    <section aria-labelledby="log-h">
+      <div class="log-h">
+        <h2 id="log-h">Tool calls</h2>
+        <div class="controls">
+          <span class="chip" id="agent-chip" hidden></span>
+          <div class="seg" role="group" aria-label="Show">
+            <button type="button" data-f="all" aria-pressed="true">All</button><button type="button" data-f="deny" aria-pressed="false">Stopped</button><button type="button" data-f="allow" aria-pressed="false">Allowed</button>
+          </div>
+          <label><span class="vh">Search tool calls</span><input id="find" class="find" type="search" placeholder="Search" autocomplete="off"></label>
+        </div>
+      </div>
+      <div id="log" role="list"></div>
+      <div class="none" id="none" hidden></div>
+    </section>
+  </main>
+</div>
+
+<footer>
+  <span id="path"></span>
+  <span class="keys"><span><kbd>/</kbd> search</span><span><kbd>j</kbd> <kbd>k</kbd> move</span><span><kbd>enter</kbd> details</span><span><kbd>p</kbd> pause</span><span><kbd>esc</kbd> clear</span></span>
+  <span id="conn"></span>
+</footer>
+
+<p id="say" class="vh" role="status" aria-atomic="true"></p>
+
+<dialog id="confirm" aria-labelledby="confirm-h">
+  <h3 id="confirm-h">Stop all agents?</h3>
+  <p>Every tool call from every agent will be refused until you resume. Requests waiting for a decision will be refused too.</p>
+  <div class="acts">
+    <button id="confirm-no" type="button" autofocus>Cancel</button>
+    <button id="confirm-yes" class="stopbtn" type="button">Stop all agents</button>
+  </div>
+</dialog>
+
+<script nonce="{{NONCE}}">
+"use strict";
+// The token arrives in the URL fragment (never sent to servers or in referrers).
+const fromHash = new URLSearchParams(location.hash.slice(1)).get("token");
+if (fromHash) { sessionStorage.setItem("sg-token", fromHash); history.replaceState(null, "", "/"); }
+const TOKEN = sessionStorage.getItem("sg-token") || "";
+const EVERY = 1500, STALE = 6, WINDOW_MIN = 60;
+
+const $ = id => document.getElementById(id);
+let last = null, filter = "all", agentFilter = null, query = "", paused = false, failed = null, lastOk = 0, timer = null;
+let seen = null, sig = "", stripSig = "";
+const open = new Set(), reqEls = new Map();
+
+// All data is written with textContent: log entries contain text an attacker may control.
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined && text !== null) e.textContent = text;
+  return e;
+}
+
+async function api(path, body) {
+  const o = { headers: { "X-Securegent-Token": TOKEN } };
+  if (body) { o.method = "POST"; o.headers["Content-Type"] = "application/json"; o.body = JSON.stringify(body); }
+  const r = await fetch(path, o);
+  if (r.status === 401) throw new Error("no access — open the link printed in your terminal");
+  if (!r.ok && r.status !== 410) throw new Error("server answered " + r.status);
+  return r.json();
+}
+
+const when = ts => ts ? new Date(ts) : null;              // audit timestamps are local time
+const hms = ts => (ts || "").split("T")[1] || "";
+const agentOf = e => e.agent || "unidentified";
+const keyOf = e => [e.ts, e.tool, e.decision, e.reason, JSON.stringify(e.args)].join("|");
+function ago(ts) {
+  const d = when(ts); if (!d || isNaN(d)) return "";
+  const s = Math.round((Date.now() - d) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+function dayLabel(ts) {
+  const d = when(ts); if (!d || isNaN(d)) return "Unknown date";
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const diff = Math.round((today - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Yesterday";
+  return d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
+}
+const argText = a => Object.entries(a || {}).map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`).join("   ");
+const mmss = s => `${Math.floor(s / 60)}:${String(Math.max(0, s) % 60).padStart(2, "0")}`;
+const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+
+/* status */
+function status() {
+  const s = $("status"), age = Math.round((Date.now() - lastOk) / 1000);
+  if (failed) { s.className = "status off"; s.textContent = "disconnected, retrying"; }
+  else if (paused) { s.className = "status"; s.textContent = "paused"; }
+  else if (!lastOk) { s.className = "status"; s.textContent = "connecting"; }
+  else if (age > STALE) { s.className = "status stale"; s.textContent = `no update for ${age}s`; }
+  else { s.className = "status ok"; s.textContent = "live"; }
+}
+function tick() { const s = $("status"); if (!failed && !paused) { s.classList.add("tick"); setTimeout(() => s.classList.remove("tick"), 180); } }
+
+/* activity strip: every call in the last hour, stopped ones taller and orange */
+function strip(events) {
+  const now = Date.now(), from = now - WINDOW_MIN * 60000;
+  const recent = events.filter(e => { const d = when(e.ts); return d && d >= from; });
+  const stopped = recent.filter(e => e.decision !== "allow").length;
+  const key = recent.length + "|" + (recent[0] && keyOf(recent[0])) + "|" + Math.floor(now / 30000);
+  $("summary").replaceChildren();
+  if (!recent.length) {
+    const lastTs = events[0] && events[0].ts;
+    $("summary").append(el("span", "", lastTs ? `No tool calls in the last hour. Last one ${ago(lastTs)}.` : "No tool calls yet."));
+  } else {
+    $("summary").append(el("strong", "", plural(recent.length, "tool call")), document.createTextNode(" in the last hour, "),
+                        el("span", "s", `${stopped} stopped`), document.createTextNode("."));
+  }
+  const t = m => new Date(now - m * 60000).toTimeString().slice(0, 5);
+  $("ax0").textContent = t(60); $("ax1").textContent = t(40); $("ax2").textContent = t(20);
+  if (key === stripSig) return;
+  stripSig = key;
+  const box = $("strip"); box.replaceChildren();
+  for (const e of recent.slice().reverse()) {
+    const i = el("i", e.decision === "allow" ? "" : "s");
+    i.style.left = `calc(${(100 * (when(e.ts) - from) / (now - from)).toFixed(2)}% - 1px)`;
+    box.append(i);
+  }
+}
+
+/* agents */
+function agents(list) {
+  const ul = $("agents"); ul.replaceChildren();
+  if (!list.length) { ul.append(el("li", "side-h", "None yet")); return; }
+  for (const a of list) {
+    const li = el("li"), b = el("button");
+    b.type = "button";
+    b.setAttribute("aria-pressed", String(agentFilter === a.name));
+    const ct = el("span", "ct", `${a.allowed} allowed`);
+    if (a.blocked) ct.append(document.createTextNode(" · "), el("b", "", `${a.blocked} stopped`));
+    ct.append(document.createTextNode(` · ${ago(a.last)}`));
+    b.append(el("span", "nm", a.name), ct);
+    b.onclick = () => { agentFilter = agentFilter === a.name ? null : a.name; render(); };
+    li.append(b); ul.append(li);
+  }
+}
+
+/* requests waiting for a decision (kept between refreshes so focus stays put) */
+function requests(items) {
+  $("waiting").hidden = items.length === 0;
+  const box = $("reqs"), now = Date.now() / 1000, alive = new Set();
+  for (const item of items) {
+    alive.add(item.id);
+    let r = reqEls.get(item.id);
+    if (!r) { r = buildReq(item); reqEls.set(item.id, r); box.append(r); }
+    const left = Math.max(0, Math.round(item.expires - now)), span = Math.max(1, item.expires - item.created);
+    r.querySelector(".t b").style.transform = `scaleX(${Math.max(0, (item.expires - now) / span)})`;
+    r.querySelector(".left").textContent = `refused automatically in ${mmss(left)}`;
+  }
+  for (const [id, r] of reqEls) if (!alive.has(id)) { r.remove(); reqEls.delete(id); }
+  const n = items.length, say = n ? `${plural(n, "request")} waiting for your decision` : "";
+  if ($("say").textContent !== say) $("say").textContent = say;
+}
+function buildReq(item) {
+  const q = item.request || {};
+  const box = el("article", "req");
+  box.setAttribute("aria-label", `Decision needed: ${q.tool || "tool call"}`);
+  const top = el("div", "req-top"), info = el("div");
+  info.append(el("div", "req-tool", q.tool || "unknown tool"), el("div", "req-why", q.reason || ""),
+              el("div", "req-who", [q.agent, q.task].filter(Boolean).join(" — ")));
+  const acts = el("div", "acts"), no = el("button", "deny", "Deny"), yes = el("button", "approve", "Approve");
+  no.type = yes.type = "button";
+  no.onclick = () => decide(item.id, false, no, yes);
+  yes.onclick = () => decide(item.id, true, no, yes);
+  acts.append(no, yes); top.append(info, acts);
+  const foot = el("div", "req-foot"), bar = el("span", "t"); bar.append(el("b"));
+  foot.append(el("span", "left"), bar);
+  box.append(top, el("pre", "req-args", JSON.stringify(q.args || {}, null, 2)), foot);
+  return box;
+}
+async function decide(id, approved, ...bs) {
+  bs.forEach(b => b.disabled = true);
+  try { await api("/api/decide", { id, approved }); } catch (e) { fail(e); }
+  poll();
+}
+
+/* log, grouped by day */
+function log(events) {
+  const q = query.trim().toLowerCase();
+  const rows = events.filter(e => (filter === "all" || e.decision === filter) &&
+                                  (!agentFilter || agentOf(e) === agentFilter) &&
+                                  (!q || JSON.stringify(e).toLowerCase().includes(q)));
+  const chip = $("agent-chip");
+  chip.hidden = !agentFilter;
+  if (agentFilter) {
+    chip.replaceChildren(document.createTextNode("agent: " + agentFilter));
+    const x = el("button", "", "clear"); x.type = "button"; x.onclick = () => { agentFilter = null; render(); };
+    chip.append(x);
+  }
+  const next = [rows.length, rows[0] && keyOf(rows[0]), filter, agentFilter, q, [...open].join("~"), new Date().toDateString()].join("#");
+  const first = seen === null;
+  if (first) seen = new Set();
+  if (next === sig) return;                  // unchanged: leave the DOM and keyboard focus alone
+  sig = next;
+
+  const box = $("log"), had = document.activeElement && document.activeElement.dataset.k;
+  box.replaceChildren();
+  $("none").hidden = rows.length > 0;
+  $("none").textContent = events.length ? "No tool calls match these filters." : "No tool calls recorded yet.";
+  let day = null, count = {};
+  for (const e of rows) { const d = dayLabel(e.ts); count[d] = (count[d] || 0) + 1; }
+  for (const e of rows) {
+    const d = dayLabel(e.ts);
+    if (d !== day) { day = d; const h = el("div", "day", d); h.append(el("span", "", plural(count[d], "call"))); box.append(h); }
+    const k = keyOf(e), stopped = e.decision !== "allow";
+    const row = el("div", "row" + (stopped ? " s" : "") + (!first && !seen.has(k) ? " new" : ""));
+    seen.add(k);
+    row.tabIndex = 0; row.dataset.k = k;
+    row.setAttribute("role", "listitem");
+    row.setAttribute("aria-expanded", String(open.has(k)));
+    row.setAttribute("aria-label", `${hms(e.ts)} ${stopped ? "stopped" : "allowed"} ${e.tool || ""}`);
+    const mk = el("span", "mk"); mk.title = stopped ? "stopped" : "allowed";
+    const what = el("div"); what.append(el("span", "tool", e.tool || "?"), el("span", "args", argText(e.args)));
+    const why = el("div", "why", e.reason || "");
+    if (e.approved_by_human) why.append(el("span", "ok-by", "approved by you"));
+    row.append(el("span", "tm", hms(e.ts)), mk, what, why);
+    if (open.has(k)) {
+      const pre = el("pre", "more", JSON.stringify({ agent: e.agent, on_behalf_of: e.on_behalf_of, task: e.task,
+                                                     rule: e.rule, arguments: e.args }, null, 2));
+      pre.onclick = ev => ev.stopPropagation();
+      row.append(pre);
+    }
+    row.onclick = () => toggle(k);
+    row.onkeydown = ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggle(k); } };
+    box.append(row);
+  }
+  if (had) { const r = [...box.querySelectorAll(".row")].find(x => x.dataset.k === had); if (r) r.focus(); }
+}
+function toggle(k) { open.has(k) ? open.delete(k) : open.add(k); log(last.events); }
+
+function render() {
+  if (!last) return;
+  strip(last.events);
+  agents(last.agents || []);
+  requests(last.pending);
+  log(last.events);
+}
+function draw(s) {
+  last = s;
+  render();
+  $("halted").hidden = !s.kill_switch;
+  $("stop").hidden = s.kill_switch;
+  $("path").textContent = s.audit_path;
+  const n = s.stats.total;
+  $("where").textContent = `127.0.0.1 · ${s.audit_path.split(/[\\/]/).pop()} · ${n} ${n === 1 ? "entry" : "entries"}`;
+}
+function fail(e) { failed = e; const c = $("conn"); c.textContent = e.message; c.className = "err"; status(); }
+
+async function poll() {
+  clearTimeout(timer);
+  try {
+    draw(await api("/api/state?limit=500"));
+    failed = null; lastOk = Date.now(); tick();
+    const c = $("conn"); c.className = ""; c.textContent = "";
+  } catch (e) { fail(e); }
+  status();
+  if (!paused && !document.hidden) timer = setTimeout(poll, EVERY);
+}
+
+function setPaused(p) {
+  paused = p;
+  $("pause").setAttribute("aria-pressed", String(p));
+  $("pause").textContent = p ? "Resume" : "Pause";
+  p ? (clearTimeout(timer), status()) : poll();
+}
+$("pause").onclick = () => setPaused(!paused);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && !paused) poll(); });
+setInterval(() => { status(); if (last) requests(last.pending); }, 1000);
+
+const dlg = $("confirm");
+$("stop").onclick = () => dlg.showModal();
+$("confirm-no").onclick = () => dlg.close();
+$("confirm-yes").onclick = async () => { dlg.close(); try { await api("/api/kill-switch", { on: true }); } catch (e) { fail(e); } poll(); };
+$("resume").onclick = async () => { try { await api("/api/kill-switch", { on: false }); } catch (e) { fail(e); } poll(); };
+
+document.querySelectorAll("[data-f]").forEach(b => b.onclick = () => {
+  filter = b.dataset.f;
+  document.querySelectorAll("[data-f]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  render();
+});
+$("find").oninput = ev => { query = ev.target.value; render(); };
+
+// Keyboard: / search, j/k move between rows, p pause, esc clears.
+document.addEventListener("keydown", ev => {
+  if (dlg.open || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+  const typing = ev.target.matches("input, textarea");
+  if (ev.key === "Escape") { if (typing) ev.target.blur(); query = ""; $("find").value = ""; agentFilter = null; render(); return; }
+  if (typing) return;
+  if (ev.key === "/") { ev.preventDefault(); $("find").focus(); }
+  else if (ev.key === "p") setPaused(!paused);
+  else if (ev.key === "j" || ev.key === "k") {
+    const rows = [...document.querySelectorAll(".row")];
+    if (!rows.length) return;
+    const i = rows.indexOf(document.activeElement);
+    const n = i < 0 ? 0 : Math.min(rows.length - 1, Math.max(0, i + (ev.key === "j" ? 1 : -1)));
+    rows[n].focus(); rows[n].scrollIntoView({ block: "nearest" });
+  }
+});
+
+poll();
+</script>
+</body>
+</html>

@@ -29,4 +29,8 @@ Securegent is in early development (0.x). Only the latest release gets security 
 - Path rules match the text of the path the AI sends. They don't resolve symlinks or
   `..` (the sample policy rejects `..` in write paths). Keep the MCP server itself limited
   to the folders it needs.
-- The MCP proxy supports the stdio transport only, and refuses calls that need human approval.
+- The MCP proxy supports the stdio transport only.
+- Approvals and the kill switch are files in the state folder (`~/.securegent`). Anyone who can
+  write to that folder can approve requests or stop agents, so keep it private to your user.
+- The dashboard is for one person on one computer. Its token is in the link printed when it
+  starts; treat that link like a password.

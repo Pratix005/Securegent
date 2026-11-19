@@ -43,6 +43,7 @@ class McpProxy:
         self.kill_switch = Path(kill_switch) if kill_switch else None
         self._agent_id = guard.registry.verify(token)["sub"]
         self._write_lock = threading.Lock()
+        self._upstream_lock = threading.Lock()
         self._pending_lists: set = set()        # ids of tools/list requests in flight
         self._done = threading.Event()
         self.proc: subprocess.Popen | None = None
@@ -55,8 +56,10 @@ class McpProxy:
             self.client_out.flush()
 
     def _send_upstream(self, msg) -> None:
-        self.proc.stdin.write(json.dumps(msg, separators=(",", ":")).encode() + b"\n")
-        self.proc.stdin.flush()
+        data = json.dumps(msg, separators=(",", ":")).encode() + b"\n"
+        with self._upstream_lock:
+            self.proc.stdin.write(data)
+            self.proc.stdin.flush()
 
     def run(self) -> int:
         exe = shutil.which(self.command[0]) or self.command[0]   # resolves npx -> npx.cmd on Windows
@@ -102,7 +105,9 @@ class McpProxy:
     def _handle_client_message(self, msg: dict) -> None:
         method = msg.get("method")
         if method == "tools/call":
-            self._handle_tool_call(msg)
+            # Its own thread: a call waiting for human approval must not freeze
+            # pings, cancellations or other calls.
+            threading.Thread(target=self._handle_tool_call_safely, args=(msg,), daemon=True).start()
             return
         if method == "tools/list" and "id" in msg:
             try:
@@ -111,6 +116,19 @@ class McpProxy:
                 pass
         # We re-serialise what we parsed, so the server sees exactly what was checked.
         self._send_upstream(msg)
+
+    def _handle_tool_call_safely(self, msg: dict) -> None:
+        try:
+            self._handle_tool_call(msg)
+        except (OSError, ValueError):
+            pass                                   # pipes closed while shutting down
+        except Exception as e:                     # never forward a call we failed to check
+            _log(f"error while checking a call, refusing it: {type(e).__name__}: {e}")
+            if "id" in msg:
+                try:
+                    self._refuse(msg["id"], "internal error while checking this call")
+                except (OSError, ValueError):
+                    pass
 
     def _handle_tool_call(self, msg: dict) -> None:
         if "id" not in msg:
