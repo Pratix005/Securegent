@@ -18,7 +18,9 @@ python demo.py
 ## Ways to help
 
 - **Policy packs:** ready-made rule sets for an industry (banking, healthcare, HR, DevOps).
-- **Attack scenarios:** new prompt-injection cases the guard should stop.
+- **Attack scenarios:** new prompt-injection cases for the red-team suite. Add a `Scenario` to
+  `securegent/redteam/scenarios.py` with a `harm` check and the `attack_calls` a hijacked agent
+  would make, then run `python -m securegent.redteam`.
 - **Integrations:** OpenAI, LangChain, LlamaIndex, MCP servers.
 - **Docs and examples.**
 

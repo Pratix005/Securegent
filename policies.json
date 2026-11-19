@@ -11,9 +11,9 @@
       "id": "email-internal",
       "agent": "finance-assistant",
       "tool": "email.send",
-      "when": [{ "arg": "to", "op": "endswith", "value": "@acme.com" }],
+      "when": [{ "arg": "to", "op": "matches", "value": "[a-z0-9._%+-]+@acme\\.com" }],
       "effect": "allow",
-      "reason": "internal email is fine"
+      "reason": "email to exactly one internal address is fine"
     },
     {
       "id": "email-external-attachment",
@@ -34,16 +34,20 @@
       "id": "payment-small",
       "agent": "finance-assistant",
       "tool": "payments.pay",
-      "when": [{ "arg": "amount", "op": "lte", "value": 100000 }],
+      "when": [
+        { "arg": "vendor", "op": "in", "value": ["Tata Office Supplies"] },
+        { "arg": "amount", "op": "lte", "value": 100000 }
+      ],
+      "limit": { "sum_arg": "amount", "max": 100000, "window_seconds": 86400 },
       "effect": "allow",
-      "reason": "payments up to 1 lakh are auto-approved"
+      "reason": "approved vendors, up to 1 lakh per day in total, are auto-approved"
     },
     {
-      "id": "payment-large",
+      "id": "payment-needs-approval",
       "agent": "finance-assistant",
       "tool": "payments.pay",
       "effect": "approve",
-      "reason": "payments over 1 lakh need human approval"
+      "reason": "large payments and unknown vendors need human approval"
     },
     {
       "id": "read-files",
@@ -52,6 +56,21 @@
       "when": [{ "arg": "path", "op": "not_contains", "value": "secret" }],
       "effect": "allow",
       "reason": "reading non-secret files is fine"
+    },
+    {
+      "id": "list-files",
+      "agent": "*",
+      "tool": "files.list",
+      "effect": "allow",
+      "reason": "listing file names is fine"
+    },
+    {
+      "id": "web-vendor-site",
+      "agent": "*",
+      "tool": "web.fetch",
+      "when": [{ "arg": "url", "op": "startswith", "value": "https://tataoffice.in/" }],
+      "effect": "allow",
+      "reason": "agents may browse the approved vendor's website"
     }
   ]
 }

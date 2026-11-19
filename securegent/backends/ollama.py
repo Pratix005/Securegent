@@ -1,8 +1,11 @@
 """
-Free local backend: runs the agent loop against a model served by Ollama
-(http://localhost:11434). No API key, nothing leaves the laptop.
+Free local backend: runs an agent loop against a model served by Ollama
+(http://localhost:11434). No API key, nothing leaves the machine.
 
 Uses only the Python standard library.
+
+Tools are given in a generic format:
+    {"name": str, "description": str, "parameters": <JSON schema>}
 """
 
 import json
@@ -27,21 +30,20 @@ def _chat(model: str, messages: list, tools: list) -> dict:
         return json.loads(resp.read())["message"]
 
 
-def run_local_agent(system: str, user: str, tools: list[dict], handlers: dict,
-                    model: str = DEFAULT_MODEL, max_steps: int = 15) -> str:
-    """
-    tools:    Ollama tool definitions ({"type": "function", "function": {...}})
-    handlers: tool name -> python function(**args) -> str
-    Returns the model's final text answer.
-    """
+def run_agent(system: str, user: str, tools: list[dict], handlers: dict,
+              model: str = DEFAULT_MODEL, max_steps: int = 15) -> str:
+    """Run the tool-calling loop. handlers maps tool name -> fn(**args) -> str."""
+    ollama_tools = [{"type": "function", "function": {
+        "name": t["name"], "description": t["description"], "parameters": t["parameters"],
+    }} for t in tools]
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
     for _ in range(max_steps):
         try:
-            msg = _chat(model, messages, tools)
+            msg = _chat(model, messages, ollama_tools)
         except urllib.error.URLError:
-            raise SystemExit("\nCan't reach Ollama at localhost:11434. Open the Ollama app "
-                             "(or run `ollama serve`) and try again.")
+            raise RuntimeError("Can't reach Ollama at localhost:11434. Open the Ollama app "
+                               "(or run `ollama serve`) and try again.") from None
         messages.append(msg)
 
         calls = msg.get("tool_calls") or []
@@ -67,16 +69,3 @@ def run_local_agent(system: str, user: str, tools: list[dict], handlers: dict,
             messages.append({"role": "tool", "content": str(result), "tool_name": name})
 
     return "(stopped: reached the step limit)"
-
-
-def to_ollama_tools(anthropic_tools) -> list[dict]:
-    """Convert the SDK @beta_tool definitions into Ollama's tool format."""
-    out = []
-    for t in anthropic_tools:
-        d = t.to_dict()
-        out.append({"type": "function", "function": {
-            "name": d["name"],
-            "description": d.get("description", ""),
-            "parameters": d["input_schema"],
-        }})
-    return out

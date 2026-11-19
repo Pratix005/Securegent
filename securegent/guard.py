@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Callable
 
 from .identity import AgentRegistry, AuthError
-from .policy import ALLOW, APPROVE, DENY, Policy
+from .policy import ALLOW, APPROVE, DENY, Decision, Policy
 
 
 class Blocked(Exception):
@@ -46,6 +46,7 @@ class Guard:
         self.audit = audit
         self.approver = approver
         self._tools: dict[str, Callable] = {}
+        self._usage: list[tuple[float, str, str, float]] = []   # (time, agent, rule, value)
 
     def tool(self, name: str):
         """Decorator to register a function as a guarded tool."""
@@ -79,6 +80,12 @@ class Guard:
         decision = self.policy.evaluate(claims["sub"], tool, args)
         entry["rule"] = decision.rule
 
+        # 3b. Running totals: stops "10 payments of 95,000" style splitting
+        if decision.effect == ALLOW and decision.limit:
+            over = self._over_limit(claims["sub"], decision, args)
+            if over:
+                decision = Decision(APPROVE, over, decision.rule, decision.limit)
+
         if decision.effect == DENY:
             self._log(entry, DENY, decision.reason)
             raise Blocked(decision.reason)
@@ -92,8 +99,33 @@ class Guard:
 
         # 4. Execute and record
         result = self._tools[tool](**args)
+        if decision.limit:
+            self._usage.append((time.time(), claims["sub"], decision.rule,
+                                self._limit_value(decision.limit, args)))
         self._log(entry, ALLOW, decision.reason)
         return result
+
+    @staticmethod
+    def _limit_value(limit: dict, args: dict) -> float:
+        """The amount this call adds to the running total (1 per call if no sum_arg)."""
+        key = limit.get("sum_arg")
+        if not key:
+            return 1.0
+        try:
+            return float(args.get(key, 0))
+        except (TypeError, ValueError):
+            return float("inf")       # unparseable amounts never slip under a limit
+
+    def _over_limit(self, agent: str, decision: Decision, args: dict) -> str | None:
+        limit = decision.limit
+        since = time.time() - limit["window_seconds"]
+        used = sum(v for t, a, r, v in self._usage if t >= since and a == agent and r == decision.rule)
+        new_total = used + self._limit_value(limit, args)
+        if new_total > limit["max"]:
+            what = limit.get("sum_arg") or "calls"
+            return (f"limit exceeded for rule '{decision.rule}': {what} total would be "
+                    f"{new_total:g} (max {limit['max']:g} per {limit['window_seconds']:g}s)")
+        return None
 
     def _log(self, entry: dict, effect: str, reason: str) -> None:
         self.audit.write({**entry, "decision": effect, "reason": reason})

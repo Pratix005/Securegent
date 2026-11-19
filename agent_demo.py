@@ -167,12 +167,13 @@ def main():
     tools = make_tools(guard, token)
 
     if "--local" in sys.argv:
-        from local_llm import DEFAULT_MODEL, run_local_agent, to_ollama_tools
+        from securegent.backends.ollama import DEFAULT_MODEL, run_agent
         print(f"\n=== Live agent (local: {DEFAULT_MODEL} via Ollama) - task: process today's invoices ===")
         print("    (running on your CPU, each step can take 10-60 seconds)")
         handlers = {t.name: (lambda t: lambda **a: t.call(a))(t) for t in tools}
-        text = run_local_agent(SYSTEM, "Please process today's invoices.",
-                               to_ollama_tools(tools), handlers)
+        specs = [{"name": d["name"], "description": d.get("description", ""),
+                  "parameters": d["input_schema"]} for d in (t.to_dict() for t in tools)]
+        text = run_agent(SYSTEM, "Please process today's invoices.", specs, handlers)
         print(f"\n=== Agent's summary ===\n{text}")
         print_audit()
         return
