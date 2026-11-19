@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from agentguard import AgentRegistry, AuditLog, AuthError, Blocked, Guard, Policy
+from securegent import AgentRegistry, AuditLog, AuthError, Blocked, Guard, Policy
 
 RULES = [
     {"id": "small-pay", "tool": "pay", "when": [{"arg": "amount", "op": "lte", "value": 100}], "effect": "allow"},
@@ -15,7 +15,7 @@ RULES = [
 ]
 
 
-class AgentGuardTests(unittest.TestCase):
+class SecuregentTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.log = AuditLog(Path(self.tmp.name) / "audit.jsonl")

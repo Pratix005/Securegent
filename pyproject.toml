@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agentguard"
+name = "securegent"
 version = "0.1.0"
 description = "Identity, permissions and audit for AI agents: a firewall between your agent and its tools."
 readme = "README.md"
@@ -24,4 +24,4 @@ dependencies = []   # the core has no dependencies
 claude = ["anthropic>=2.10.0"]
 
 [tool.setuptools]
-packages = ["agentguard"]
+packages = ["securegent"]

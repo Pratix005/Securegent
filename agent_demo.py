@@ -1,8 +1,8 @@
 """
-AgentGuard + a real Claude agent.
+Securegent + a real Claude agent.
 
 Claude is given a finance assistant job and some tools. It decides on its own which
-tools to call. Every call goes through AgentGuard, which checks identity, scope and
+tools to call. Every call goes through Securegent, which checks identity, scope and
 policy before anything runs. One email in the inbox is a prompt-injection attack.
 
 Setup:   pip install -r requirements.txt
@@ -19,7 +19,7 @@ from pathlib import Path
 import anthropic
 from anthropic import beta_tool
 
-from agentguard import AgentRegistry, AuditLog, Blocked, Guard, Policy
+from securegent import AgentRegistry, AuditLog, Blocked, Guard, Policy
 
 HERE = Path(__file__).parent
 LOG = HERE / "audit.log.jsonl"
@@ -73,7 +73,7 @@ def build_guard() -> tuple[Guard, AgentRegistry]:
                       allowed_scopes=["email.*", "payments.*", "files.read"])
     guard = Guard(registry, Policy.from_file(HERE / "policies.json"), AuditLog(LOG), approver)
 
-    # The real implementations. They only ever run if AgentGuard allows the call.
+    # The real implementations. They only ever run if Securegent allows the call.
     guard.tool("email.read")(lambda: json.dumps(INBOX, indent=2))
     guard.tool("email.send")(lambda to, subject, body="", attachment=None: f"email sent to {to}")
     guard.tool("payments.pay")(lambda vendor, amount: f"paid Rs {amount:,} to {vendor}")

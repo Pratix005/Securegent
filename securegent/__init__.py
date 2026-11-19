@@ -1,4 +1,4 @@
-"""AgentGuard: identity, permissions and audit for AI agents."""
+"""Securegent: identity, permissions and audit for AI agents."""
 
 from .guard import AuditLog, Blocked, Guard
 from .identity import AgentRegistry, AuthError

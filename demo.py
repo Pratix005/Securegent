@@ -1,5 +1,5 @@
 """
-AgentGuard demo: a finance AI agent reads an inbox that contains a prompt-injection
+Securegent demo: a finance AI agent reads an inbox that contains a prompt-injection
 attack. Watch the guard stop the dangerous actions while letting normal work through.
 
 Run:  python demo.py            (approvals are auto-refused)
@@ -9,7 +9,7 @@ Run:  python demo.py            (approvals are auto-refused)
 import sys
 from pathlib import Path
 
-from agentguard import AgentRegistry, AuditLog, Blocked, Guard, Policy
+from securegent import AgentRegistry, AuditLog, Blocked, Guard, Policy
 
 HERE = Path(__file__).parent
 LOG = HERE / "audit.log.jsonl"

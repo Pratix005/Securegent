@@ -1,4 +1,4 @@
-# Contributing to AgentGuard
+# Contributing to Securegent
 
 Thanks for helping make AI agents safer! All contributions are welcome: code, policy
 rules, attack scenarios, docs and bug reports.
@@ -7,7 +7,7 @@ rules, attack scenarios, docs and bug reports.
 
 ```
 git clone <your fork>
-cd agentguard
+cd securegent
 python -m venv .venv
 .venv\Scripts\activate          # Windows  (macOS/Linux: source .venv/bin/activate)
 pip install -e ".[claude]"
@@ -28,7 +28,7 @@ Look for issues labelled `good first issue`.
 
 1. One focused change per PR.
 2. Add or update tests in `tests/`, and make sure all tests pass.
-3. Keep the core (`agentguard/`) free of third-party dependencies.
+3. Keep the core (`securegent/`) free of third-party dependencies.
 4. Explain *why* in the PR description, not only what.
 
 ## Reporting security problems

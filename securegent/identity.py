@@ -34,7 +34,7 @@ def _unb64(text: str) -> bytes:
 
 class AgentRegistry:
     def __init__(self, secret: bytes | None = None):
-        self._secret = secret or os.environ.get("AGENTGUARD_SECRET", "").encode() or os.urandom(32)
+        self._secret = secret or os.environ.get("SECUREGENT_SECRET", "").encode() or os.urandom(32)
         self._agents: dict[str, Agent] = {}
 
     # --- registration -------------------------------------------------
