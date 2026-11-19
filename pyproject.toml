@@ -1,21 +1,24 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "securegent"
 version = "0.1.0"
-description = "Identity, permissions and audit for AI agents: a firewall between your agent and its tools."
+description = "A firewall for AI agents: identity, permissions, approvals and audit between your agent and its tools."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.10"
 authors = [{ name = "Pratix005" }]
-keywords = ["ai-agents", "security", "llm", "prompt-injection", "authorization", "audit", "mcp"]
+keywords = ["ai-agents", "ai-security", "llm", "prompt-injection", "mcp", "authorization", "audit", "dpdp"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
     "Topic :: Security",
 ]
 dependencies = []   # the core has no dependencies
@@ -23,9 +26,20 @@ dependencies = []   # the core has no dependencies
 [project.optional-dependencies]
 claude = ["anthropic>=2.10.0"]
 
+[project.urls]
+Homepage = "https://github.com/Pratix005/Securegent"
+Issues = "https://github.com/Pratix005/Securegent/issues"
+Security = "https://github.com/Pratix005/Securegent/blob/main/SECURITY.md"
+
+[project.scripts]
+securegent-dashboard = "securegent.dashboard.__main__:main"
+securegent-mcp = "securegent.mcp.__main__:main"
+securegent-redteam = "securegent.redteam.__main__:main"
+
 [tool.setuptools]
 packages = ["securegent", "securegent.backends", "securegent.redteam", "securegent.mcp",
-            "securegent.dashboard"]
+            "securegent.dashboard", "securegent.packs"]
 
 [tool.setuptools.package-data]
 "securegent.dashboard" = ["index.html", "static/fonts/*.woff2", "static/fonts/*.txt"]
+"securegent.packs" = ["*.json"]

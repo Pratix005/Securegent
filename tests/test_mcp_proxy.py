@@ -115,12 +115,12 @@ class McpProxyTests(unittest.TestCase):
 
 
 class FilesystemPolicyTests(unittest.TestCase):
-    """Decisions of the shipped policies/mcp-filesystem.json (no server needed)."""
+    """Decisions of the bundled pack:mcp-filesystem (no server needed)."""
 
     def setUp(self):
         sys.path.insert(0, str(ROOT))
         from securegent.policy import Policy
-        self.policy = Policy.from_file(ROOT / "policies" / "mcp-filesystem.json")
+        self.policy = Policy.from_file("pack:mcp-filesystem")
 
     def effect(self, tool, **args):
         return self.policy.evaluate("mcp-agent", f"filesystem.{tool}", args).effect

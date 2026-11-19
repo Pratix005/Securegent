@@ -1,7 +1,7 @@
 """
 Run any stdio MCP server behind Securegent.
 
-  python -m securegent.mcp --policy policies/mcp-filesystem.json --server-name filesystem \\
+  python -m securegent.mcp --policy pack:mcp-filesystem --server-name filesystem \\
       -- npx -y @modelcontextprotocol/server-filesystem C:/work
 
 Everything after `--` is the command that starts the real MCP server.
@@ -29,7 +29,7 @@ def main(argv=None) -> int:
 
     p = argparse.ArgumentParser(prog="python -m securegent.mcp",
                                 description="Run an MCP server behind the Securegent policy guard.")
-    p.add_argument("--policy", required=True, help="policy JSON file")
+    p.add_argument("--policy", required=True, help="policy JSON file, or a bundled pack like pack:mcp-filesystem")
     p.add_argument("--server-name", required=True,
                    help="name used in policies: tools become '<server-name>.<tool>'")
     p.add_argument("--agent-id", default="mcp-agent", help="agent name your policy rules use (default: mcp-agent)")

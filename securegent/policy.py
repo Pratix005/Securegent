@@ -29,6 +29,25 @@ _OPS = {
 }
 
 
+PACKS_DIR = Path(__file__).parent / "packs"
+
+
+def list_packs() -> list[str]:
+    """Names of the policy packs bundled with Securegent."""
+    return sorted(p.stem for p in PACKS_DIR.glob("*.json"))
+
+
+def resolve_policy_path(path: str | Path) -> Path:
+    """A file path, or "pack:<name>" for a bundled pack."""
+    text = str(path)
+    if text.startswith("pack:"):
+        name = text[len("pack:"):]
+        if name not in list_packs():
+            raise FileNotFoundError(f"no bundled pack '{name}' (available: {', '.join(list_packs())})")
+        return PACKS_DIR / f"{name}.json"
+    return Path(path)
+
+
 def _matches_any(name: str, patterns) -> bool:
     """A rule's "agent"/"tool" may be one glob pattern or a list of them."""
     if isinstance(patterns, str):
@@ -73,7 +92,8 @@ class Policy:
 
     @classmethod
     def from_file(cls, path: str | Path) -> "Policy":
-        return cls(json.loads(Path(path).read_text(encoding="utf-8"))["rules"])
+        """Load a policy file, or a bundled pack by name: "pack:india-finance"."""
+        return cls(json.loads(resolve_policy_path(path).read_text(encoding="utf-8"))["rules"])
 
     def evaluate(self, agent_id: str, tool: str, args: dict) -> Decision:
         for rule in self.rules:

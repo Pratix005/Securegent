@@ -25,7 +25,8 @@ def main(argv=None) -> int:
                                 description="Run prompt-injection attacks against a Securegent-protected agent.")
     p.add_argument("--mode", choices=["policy", "agent"], default="policy",
                    help="policy: replay attacks into the guard (instant). agent: run a real AI agent.")
-    p.add_argument("--policy", default="policies.json", help="policy file to test (default: policies.json)")
+    p.add_argument("--policy", default="policies.json",
+                   help="policy file to test, or a bundled pack like pack:india-finance (default: policies.json)")
     p.add_argument("--no-guard", action="store_true", help="baseline run with no Securegent protection")
     p.add_argument("--backend", choices=["ollama", "claude"], default="ollama", help="agent mode: which AI")
     p.add_argument("--model", help="agent mode: model name (default depends on backend)")
@@ -52,9 +53,10 @@ def main(argv=None) -> int:
 
     policy = None
     if not args.no_guard:
-        if not Path(args.policy).exists():
-            p.error(f"policy file not found: {args.policy}")
-        policy = Policy.from_file(args.policy)
+        try:
+            policy = Policy.from_file(args.policy)
+        except FileNotFoundError as e:
+            p.error(f"policy not found: {args.policy} ({e})")
 
     backend = model = None
     if args.mode == "agent":
