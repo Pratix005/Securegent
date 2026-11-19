@@ -1,0 +1,57 @@
+{
+  "rules": [
+    {
+      "id": "read-inbox",
+      "agent": "*",
+      "tool": "email.read",
+      "effect": "allow",
+      "reason": "agents may read the inbox they were given"
+    },
+    {
+      "id": "email-internal",
+      "agent": "finance-assistant",
+      "tool": "email.send",
+      "when": [{ "arg": "to", "op": "endswith", "value": "@acme.com" }],
+      "effect": "allow",
+      "reason": "internal email is fine"
+    },
+    {
+      "id": "email-external-attachment",
+      "agent": "finance-assistant",
+      "tool": "email.send",
+      "when": [{ "arg": "attachment", "op": "not_equals", "value": null }],
+      "effect": "deny",
+      "reason": "agents may not send attachments outside the company"
+    },
+    {
+      "id": "email-external",
+      "agent": "finance-assistant",
+      "tool": "email.send",
+      "effect": "approve",
+      "reason": "external email needs a human to approve"
+    },
+    {
+      "id": "payment-small",
+      "agent": "finance-assistant",
+      "tool": "payments.pay",
+      "when": [{ "arg": "amount", "op": "lte", "value": 100000 }],
+      "effect": "allow",
+      "reason": "payments up to 1 lakh are auto-approved"
+    },
+    {
+      "id": "payment-large",
+      "agent": "finance-assistant",
+      "tool": "payments.pay",
+      "effect": "approve",
+      "reason": "payments over 1 lakh need human approval"
+    },
+    {
+      "id": "read-files",
+      "agent": "*",
+      "tool": "files.read",
+      "when": [{ "arg": "path", "op": "not_contains", "value": "secret" }],
+      "effect": "allow",
+      "reason": "reading non-secret files is fine"
+    }
+  ]
+}
