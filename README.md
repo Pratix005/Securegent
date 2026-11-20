@@ -122,6 +122,13 @@ Your AI app still starts the proxy as a local command; the proxy keeps the MCP s
 the remote server (session ids, JSON or SSE replies, the server's own event stream) and
 closes it on exit. The older HTTP+SSE transport (2024-11-05) is not supported.
 
+**AI apps that connect by URL**: add `--listen 127.0.0.1:8765` and point the app at
+`http://127.0.0.1:8765/mcp`. Works with a local command or `--upstream-url` behind it. Each
+client session gets its own connection to the server and its own token, so sessions never
+share taint or tool pins. It refuses browser requests from other origins, and if
+`SECUREGENT_LISTEN_TOKEN` is set every request needs `Authorization: Bearer <token>`;
+listening on anything other than localhost is refused without one.
+
 - Policies see tools as `<server-name>.<tool>`, e.g. `filesystem.write_file`, so one policy
   file can cover many servers.
 - Blocked calls never reach the server. The AI gets an error result explaining why.
@@ -295,7 +302,7 @@ python -m unittest discover tests -v
 | `securegent/taint.py` | Taint tracking: remembers labelled tool output, finds it in later arguments |
 | `securegent/redteam/` | Attack scenarios, runner and scoring (`securegent-redteam`) |
 | `securegent/backends/` | Agent loops for a local Ollama model (free) and Claude |
-| `securegent/mcp/` | MCP proxy (`securegent-mcp`); `upstream.py`: stdio and HTTP transports; `toolscan.py`: tool poisoning checks |
+| `securegent/mcp/` | MCP proxy (`securegent-mcp`); `upstream.py`: stdio and HTTP transports; `toolscan.py`: tool poisoning checks; `listen.py`: serving over HTTP |
 | `securegent/dashboard/` | Local web console (`securegent-dashboard`) |
 | `securegent/siem.py` | SIEM export: ECS JSON, CEF, syslog (`securegent-siem`) |
 | `securegent/slack.py` | Approvals in Slack (post, poll reactions, update) |
@@ -313,7 +320,7 @@ python -m unittest discover tests -v
 - [x] **MCP security proxy:** apply Securegent policies to any stdio MCP server with no code changes
 - [x] **Dashboard:** live log, activity timeline, per-agent view, approvals and kill switch
 - [x] **MCP proxy: remote servers** over Streamable HTTP (`--upstream-url`, `--header`)
-- [ ] MCP proxy: listen over HTTP too, for clients that only speak HTTP
+- [x] **MCP proxy: listen over HTTP** for AI apps that connect by URL (`--listen`)
 - [x] **Policy packs:** `mcp-filesystem`, `india-finance` (DPDP / Aadhaar / PCI / payments)
 - [ ] More packs: healthcare, HR, DevOps, GitHub MCP server
 - [x] **Taint tracking:** rules that know where an argument's data came from (untrusted email/web, confidential files)

@@ -25,6 +25,7 @@ from ..identity import AgentRegistry
 from ..policy import Policy
 from ..slack import SlackApproval
 from ..store import MemoryUsage, SqliteUsage
+from .listen import TOKEN_ENV, HttpListener
 from .proxy import McpProxy
 from .upstream import HttpUpstream, _log, parse_headers
 
@@ -76,6 +77,11 @@ def main(argv=None) -> int:
     p.add_argument("--tool-check", choices=["block", "warn", "off"], default="block",
                    help="scan tool descriptions for hidden instructions and changes (rug pulls): "
                         "block drops such tools, warn only logs them (default: block)")
+    p.add_argument("--listen", metavar="HOST:PORT",
+                   help="serve the proxy over HTTP at http://HOST:PORT/mcp instead of stdio, for AI "
+                        "apps that connect by URL (e.g. 127.0.0.1:8765). Each client session gets its "
+                        "own upstream connection. Set SECUREGENT_LISTEN_TOKEN to require a bearer token "
+                        "(required when HOST is not loopback)")
     p.add_argument("--show-all-tools", action="store_true",
                    help="don't hide tools that are outside the agent's scope")
     args = p.parse_args(ours)
@@ -83,7 +89,8 @@ def main(argv=None) -> int:
         p.error("give either --upstream-url or a command after --, not both")
     if args.upstream_url:
         try:
-            upstream = HttpUpstream(args.upstream_url, parse_headers(args.header))
+            headers = parse_headers(args.header)
+            upstream = HttpUpstream(args.upstream_url, headers)
         except ValueError as e:
             p.error(str(e))
     elif command:
@@ -121,10 +128,35 @@ def main(argv=None) -> int:
 
     _log(f"policy={args.policy} agent={args.agent_id} scopes={scopes} audit={audit} "
          f"approvals={('dashboard+slack' if channels else 'dashboard') if args.approvals else 'refuse'}")
+    options = dict(hide_out_of_scope_tools=not args.show_all_tools,
+                   kill_switch=kill_switch, tool_check=args.tool_check)
+
+    if args.listen:
+        host, _, port = args.listen.rpartition(":")
+        if not host or not port.isdigit():
+            p.error("--listen needs HOST:PORT, e.g. 127.0.0.1:8765")
+
+        def make_proxy(client_in, client_out):
+            # A fresh token and upstream per client session: taint and tool pins never mix.
+            session_token = registry.issue_token(args.agent_id, scopes, ttl_seconds=10 * 365 * 24 * 3600,
+                                                 task=f"MCP session: {args.server_name}")
+            session_upstream = (HttpUpstream(args.upstream_url, headers) if args.upstream_url
+                                else list(command))
+            return McpProxy(session_upstream, guard, session_token, args.server_name,
+                            client_in, client_out, **options)
+        try:
+            listener = HttpListener(make_proxy, host.strip("[]"), int(port),
+                                    token=os.environ.get(TOKEN_ENV) or None)
+        except (ValueError, OSError) as e:
+            p.error(str(e))
+        try:
+            listener.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        return 0
+
     proxy = McpProxy(upstream, guard, token, args.server_name,
-                     sys.stdin.buffer, sys.stdout.buffer,
-                     hide_out_of_scope_tools=not args.show_all_tools,
-                     kill_switch=kill_switch, tool_check=args.tool_check)
+                     sys.stdin.buffer, sys.stdout.buffer, **options)
     return proxy.run()
 
 
