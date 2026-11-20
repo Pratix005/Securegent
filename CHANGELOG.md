@@ -8,6 +8,8 @@
   rule 1002 claims any log line containing "failure" or "denied" first. The "blocked 5
   times" alert also counted wrongly. Both found and fixed by testing in a real Wazuh 4.9.2
   manager; all rules now fire as documented.
+- Slack approvals: setup errors (missing_scope, not_in_channel, invalid_auth, ...) now say
+  how to fix them. Slack approvals were tested end to end in a real workspace.
 
 ## 0.2.0 (2026-11-20)
 

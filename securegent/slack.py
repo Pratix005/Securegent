@@ -34,6 +34,22 @@ class SlackError(Exception):
     pass
 
 
+_HINTS = {
+    "missing_scope": "add the bot scopes chat:write and reactions:read, then Reinstall to Workspace",
+    "not_in_channel": "invite the bot: type /invite @<your app> in the channel",
+    "channel_not_found": "use the channel id (starts with C), not its name, and invite the bot",
+    "invalid_auth": "SLACK_BOT_TOKEN must be the Bot User OAuth Token (xoxb-...)",
+    "token_revoked": "the token was revoked; reinstall the app and use the new token",
+}
+
+
+def _hint(error: str) -> str:
+    for code, hint in _HINTS.items():
+        if code in error:
+            return f" - fix: {hint}"
+    return ""
+
+
 class SlackApproval:
     """An approval channel for FileApprover: start() posts, poll() reads the answer."""
 
@@ -90,7 +106,7 @@ class SlackApproval:
             msg = self._api("chat.postMessage", {"channel": self.channel, "text": text,
                                                  "unfurl_links": False, "unfurl_media": False})
         except SlackError as e:
-            _log(f"Slack approval request not sent ({e}); use the dashboard")
+            _log(f"Slack approval request not sent ({e}){_hint(str(e))}; use the dashboard")
             return None
         return {"channel": msg.get("channel", self.channel), "ts": msg["ts"], "text": text}
 
