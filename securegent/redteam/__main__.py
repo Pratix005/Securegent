@@ -15,6 +15,7 @@ from pathlib import Path
 
 from ..policy import Policy
 from . import runner
+from .community import ScenarioError, load_scenarios
 from .scenarios import SCENARIOS
 
 ICONS = {runner.RESISTED: "OK  ", runner.BLOCKED: "OK  ", runner.COMPROMISED: "FAIL", runner.ERROR: "ERR "}
@@ -36,20 +37,36 @@ def main(argv=None) -> int:
     p.add_argument("--list", action="store_true", help="list scenarios and exit")
     p.add_argument("--json", metavar="FILE", help="also write a JSON report")
     p.add_argument("--quiet", action="store_true", help="don't print each tool call in agent mode")
+    p.add_argument("--scenarios", action="append", metavar="PATH",
+                   help="also run attacks written as JSON: a file or a folder of *.json files "
+                        "(repeatable; see attacks/TEMPLATE.json)")
     args = p.parse_args(argv)
 
+    all_scenarios = list(SCENARIOS)
+    for path in args.scenarios or []:
+        try:
+            extra = load_scenarios(path)
+        except ScenarioError as e:
+            p.error(f"bad scenario file: {e}")
+        taken = {s.id for s in all_scenarios}
+        for s in extra:
+            if s.id in taken:
+                p.error(f"scenario id '{s.id}' from {path} is already used")
+            taken.add(s.id)
+        all_scenarios += extra
+
     if args.list:
-        for s in SCENARIOS:
-            print(f"{s.id:22} {s.category:32} {s.name}")
+        for s in all_scenarios:
+            print(f"{s.id:26} {s.category:32} {s.name}")
         return 0
 
-    scenarios = SCENARIOS
+    scenarios = all_scenarios
     if args.only:
         wanted = {x.strip() for x in args.only.split(",")}
-        unknown = wanted - {s.id for s in SCENARIOS}
+        unknown = wanted - {s.id for s in all_scenarios}
         if unknown:
             p.error(f"unknown scenario id(s): {', '.join(sorted(unknown))}  (see --list)")
-        scenarios = [s for s in SCENARIOS if s.id in wanted]
+        scenarios = [s for s in all_scenarios if s.id in wanted]
 
     policy = None
     if not args.no_guard:

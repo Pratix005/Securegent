@@ -17,10 +17,12 @@ python demo.py
 
 ## Ways to help
 
-- **Policy packs:** ready-made rule sets for an industry (banking, healthcare, HR, DevOps).
-- **Attack scenarios:** new prompt-injection cases for the red-team suite. Add a `Scenario` to
-  `securegent/redteam/scenarios.py` with a `harm` check and the `attack_calls` a hijacked agent
-  would make, then run `python -m securegent.redteam`.
+- **Attack scenarios (easiest, no Python needed):** write a prompt-injection attack as a JSON
+  file in `attacks/`. Copy `attacks/TEMPLATE.json`, follow [attacks/README.md](attacks/README.md),
+  and check it with `securegent-redteam --scenarios attacks/`. Prefer not to write JSON? Open
+  a "New attack scenario" issue and describe it.
+- **Policy packs:** ready-made rule sets for an industry or an MCP server, in
+  `securegent/packs/`, with tests in `tests/` (see `tests/test_more_packs.py`).
 - **Integrations:** OpenAI, LangChain, LlamaIndex, MCP servers.
 - **Docs and examples.**
 

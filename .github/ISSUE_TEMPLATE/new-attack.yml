@@ -1,0 +1,45 @@
+name: New attack scenario
+description: Suggest a prompt-injection attack for the red-team suite
+title: "Attack: "
+labels: ["attack-scenario", "good first issue"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! You can also write the attack as JSON yourself: see `attacks/README.md`.
+        If the attack gets past Securegent in a way that could hurt real users, please report it
+        privately instead (see SECURITY.md).
+  - type: input
+    id: name
+    attributes:
+      label: Attack name
+      placeholder: Fake GST refund fee
+    validations:
+      required: true
+  - type: textarea
+    id: injection
+    attributes:
+      label: The injected text
+      description: The email, file or web page text the AI agent reads.
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: What a hijacked agent would do
+      description: The harmful tool calls, e.g. payments.pay(vendor="X", amount=4999).
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: What happened when you ran it?
+      options:
+        - I haven't run it
+        - Securegent blocked it
+        - It got through (COMPROMISED)
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Scenario JSON (optional)
+      render: json

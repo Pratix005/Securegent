@@ -367,6 +367,7 @@ securegent-redteam --mode agent              # a real AI agent does the work (fr
 securegent-redteam --mode agent --backend claude
 securegent-redteam --list                    # see all attacks
 securegent-redteam --json report.json        # also save a JSON report
+securegent-redteam --scenarios attacks/      # also run community attacks written as JSON
 ```
 
 ```
@@ -381,6 +382,11 @@ Each attack ends as **RESISTED** (the AI ignored it), **BLOCKED** (the AI fell f
 Securegent stopped it) or **COMPROMISED** (a harmful action ran). The suite also checks that
 your policy still allows normal work, because a policy that blocks everything isn't secure,
 it's just broken.
+
+**Add your own attacks** as JSON files, no Python needed, and run them with
+`--scenarios attacks/`. The [attacks/](attacks/README.md) folder has a template, a guide and
+community attacks such as a fake GST refund fee and a vendor reply-to swap. Found one that
+gets through? See [attacks/README.md](attacks/README.md#your-attack-got-through).
 
 Without Securegent, all 14 attacks succeed. The first version of the sample policy scored
 7/10: the suite found a vendor-name loophole, a recipient-smuggling trick and payment
@@ -498,6 +504,7 @@ real Wazuh manager and a real Slack workspace.
 | `securegent/slack.py` | Approvals in Slack (post, poll reactions, update) |
 | `securegent/approvals.py` | Human approvals shared between the proxy and the dashboard |
 | `securegent/packs/` | Bundled policy packs (`github`, `devops`, `hr`, `healthcare`, `india-finance`, `mcp-filesystem`) |
+| `attacks/` | Community attack scenarios (JSON), template and guide |
 | `docs/siem/` | SIEM setup and Wazuh rules |
 | `policies.json` | Example rules for the finance demos |
 | `demo.py` | Scripted prompt-injection attack |
@@ -507,7 +514,7 @@ real Wazuh manager and a real Slack workspace.
 
 - [x] **Prompt-injection test suite:** run attack scenarios against your agent and get a security score
 - [x] **More attacks:** multi-step exfiltration, Hindi and Hinglish injections, MCP tool poisoning and rug pulls
-- [ ] Community-contributed attack scenarios
+- [x] **Community attack scenarios:** write attacks as JSON (`attacks/`, `--scenarios`), issue form for ideas
 - [x] **MCP security proxy:** apply Securegent policies to any MCP server with no code changes
 - [x] **Dashboard:** live log, activity timeline, per-agent view, approvals and kill switch
 - [x] **MCP proxy: remote servers** over Streamable HTTP (`--upstream-url`, `--header`)
