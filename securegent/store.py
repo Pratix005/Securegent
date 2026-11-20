@@ -1,0 +1,107 @@
+"""
+Where running limits ("max Rs 1 lakh per day", "max 50 writes per hour") keep their totals.
+
+  MemoryUsage  totals live in the process; a restart starts from zero. Fine for tests,
+               demos and short scripts.
+  SqliteUsage  totals live in a SQLite file. They survive restarts and crashes (so killing
+               the agent's process can't reset a daily limit), and several processes, such
+               as one MCP proxy per server, can share one limit safely.
+
+Both offer reserve(): check the total and record the new use in one atomic step, so two
+calls arriving at the same moment can't both squeeze under the limit.
+"""
+
+import math
+import sqlite3
+import threading
+import time
+from pathlib import Path
+
+KEEP_SECONDS = 40 * 24 * 3600      # usage older than this is never needed by a sane window
+
+
+class MemoryUsage:
+    def close(self) -> None:
+        pass
+
+    def __init__(self):
+        self._rows: list[tuple[float, str, str, float]] = []    # (time, agent, rule, value)
+        self._lock = threading.Lock()
+
+    def reserve(self, agent: str, rule: str, value: float, window: float, maximum: float) -> tuple[bool, float]:
+        """Record `value` if the total in the window stays <= maximum.
+        Returns (recorded, total including this value)."""
+        now = time.time()
+        with self._lock:
+            used = sum(v for t, a, r, v in self._rows if t >= now - window and a == agent and r == rule)
+            total = used + value
+            if total > maximum:
+                return False, total
+            self._rows.append((now, agent, rule, value))
+            return True, total
+
+    def add(self, agent: str, rule: str, value: float) -> None:
+        """Record use that a human approved over the limit; it still counts."""
+        with self._lock:
+            self._rows.append((time.time(), agent, rule, value))
+
+
+class SqliteUsage:
+    def __init__(self, path: str | Path):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._local = threading.local()
+        self._all: list[sqlite3.Connection] = []     # every thread's connection, for close()
+        self._all_lock = threading.Lock()
+        with self._connect() as db:
+            db.execute("PRAGMA journal_mode=WAL")
+            db.execute("CREATE TABLE IF NOT EXISTS usage (ts REAL NOT NULL, agent TEXT NOT NULL, "
+                       "rule TEXT NOT NULL, value REAL NOT NULL)")
+            db.execute("CREATE INDEX IF NOT EXISTS usage_lookup ON usage (agent, rule, ts)")
+            db.execute("DELETE FROM usage WHERE ts < ?", (time.time() - KEEP_SECONDS,))
+
+    def _connect(self) -> sqlite3.Connection:
+        db = getattr(self._local, "db", None)
+        if db is None:
+            # isolation_level=None: we issue BEGIN IMMEDIATE ourselves, which takes the
+            # write lock before reading, so check-and-record is atomic across processes.
+            db = sqlite3.connect(self.path, timeout=30, isolation_level=None)
+            db.execute("PRAGMA busy_timeout=30000")
+            self._local.db = db
+            with self._all_lock:
+                self._all.append(db)
+        return db
+
+    def close(self) -> None:
+        with self._all_lock:
+            for db in self._all:
+                try:
+                    db.close()
+                except sqlite3.Error:
+                    pass
+            self._all.clear()
+        self._local = threading.local()
+
+    def reserve(self, agent: str, rule: str, value: float, window: float, maximum: float) -> tuple[bool, float]:
+        db, now = self._connect(), time.time()
+        db.execute("BEGIN IMMEDIATE")
+        try:
+            used = db.execute("SELECT COALESCE(SUM(value), 0) FROM usage WHERE agent=? AND rule=? AND ts>=?",
+                              (agent, rule, now - window)).fetchone()[0]
+            total = used + value
+            ok = total <= maximum and math.isfinite(value)
+            if ok:
+                db.execute("INSERT INTO usage VALUES (?, ?, ?, ?)", (now, agent, rule, value))
+            db.execute("COMMIT")
+            return ok, total
+        except BaseException:
+            db.execute("ROLLBACK")
+            raise
+
+    def add(self, agent: str, rule: str, value: float) -> None:
+        if not math.isfinite(value):
+            return
+        db = self._connect()
+        db.execute("BEGIN IMMEDIATE")
+        db.execute("INSERT INTO usage VALUES (?, ?, ?, ?)", (time.time(), agent, rule, value))
+        db.execute("COMMIT")

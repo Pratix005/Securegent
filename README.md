@@ -77,7 +77,13 @@ Rule conditions: `equals`, `not_equals`, `contains`, `not_contains`, `startswith
 ```
 
 Once the total in the window would go over `max`, the call needs human approval. This
-stops "ten payments of Rs 95,000" style splitting.
+stops "ten payments of Rs 95,000" style splitting. Negative or unreadable amounts never
+count as room under the limit.
+
+Totals are kept in memory by default. To keep them across restarts (so crashing or
+restarting the agent can't reset a daily limit) and share them between processes, pass a
+SQLite store: `Guard(..., usage=SqliteUsage("usage.db"))`. The MCP proxy does this by default
+(`~/.securegent/usage.db`, change with `--usage-db`; `--usage-db memory` turns it off).
 
 ## MCP proxy: protect any AI app with no code changes
 
@@ -285,6 +291,7 @@ python -m unittest discover tests -v
 | `securegent/identity.py` | Agent registry, signed task-scoped tokens, revocation, kill switch |
 | `securegent/policy.py` | Rule engine (first match wins, default deny) |
 | `securegent/guard.py` | Checkpoint every tool call passes through, running limits, audit log |
+| `securegent/store.py` | Where running-limit totals live: memory or SQLite |
 | `securegent/taint.py` | Taint tracking: remembers labelled tool output, finds it in later arguments |
 | `securegent/redteam/` | Attack scenarios, runner and scoring (`securegent-redteam`) |
 | `securegent/backends/` | Agent loops for a local Ollama model (free) and Claude |
@@ -313,7 +320,8 @@ python -m unittest discover tests -v
 - [x] **SIEM export:** ECS JSON and CEF, syslog, Wazuh rules, MITRE ATLAS tags (`securegent-siem`)
 - [x] **Slack approvals:** approve or deny with a reaction, no public URL needed
 - [ ] Teams approvals
-- [ ] Persistent storage (SQLite/Postgres)
+- [x] **Persistent limits:** SQLite, safe across restarts and processes
+- [ ] Postgres for multi-machine deployments
 
 ## Contributing
 

@@ -41,7 +41,7 @@ class ProxyHarness(unittest.TestCase):
         self.proc = subprocess.Popen(
             [sys.executable, "-m", "securegent.mcp", "--policy", str(policy), "--server-name", "fake",
              "--scopes", "fake.read_file,fake.write_file", "--audit", str(self.audit),
-             "--kill-switch", str(self.kill), *upstream_args],
+             "--kill-switch", str(self.kill), "--usage-db", str(tmp / "usage.db"), *upstream_args],
             cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             env={**os.environ, **env})
         self.next_id = 0

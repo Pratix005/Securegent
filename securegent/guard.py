@@ -9,6 +9,7 @@ from typing import Callable
 
 from .identity import AgentRegistry, AuthError
 from .policy import ALLOW, APPROVE, DENY, Decision, Policy
+from .store import MemoryUsage
 from .taint import TaintTracker, TaintView
 
 
@@ -54,14 +55,15 @@ class AuditLog:
 
 class Guard:
     def __init__(self, registry: AgentRegistry, policy: Policy, audit: AuditLog,
-                 approver: Approver = deny_all_approver):
+                 approver: Approver = deny_all_approver, usage=None):
+        """usage: where running-limit totals are kept (store.MemoryUsage by default;
+        store.SqliteUsage keeps them across restarts and processes)."""
         self.registry = registry
         self.policy = policy
         self.audit = audit
         self.approver = approver
         self._tools: dict[str, Callable] = {}
-        self._usage: list[tuple[float, str, str, float]] = []   # (time, agent, rule, value)
-        self._usage_lock = threading.Lock()   # calls may be checked from several threads
+        self.usage = usage if usage is not None else MemoryUsage()
         self.taint = TaintTracker()           # where data came from, per token (session)
 
     def tool(self, name: str):
@@ -128,15 +130,16 @@ class Guard:
             entry["taint"] = view.evidence
 
         # 3b. Running totals: stops "10 payments of 95,000" style splitting.
-        # Checking and reserving happen under one lock, so two calls arriving at the
-        # same moment can't both squeeze under the limit.
+        # Checking and recording are one atomic step in the usage store, so two calls
+        # arriving at the same moment can't both squeeze under the limit.
         if decision.effect == ALLOW and decision.limit:
-            value = self._limit_value(decision.limit, args)
-            with self._usage_lock:
-                over = self._over_limit(claims["sub"], decision, args)
-                if not over:
-                    self._usage.append((time.time(), claims["sub"], decision.rule, value))
-            if over:
+            limit = decision.limit
+            ok, total = self.usage.reserve(claims["sub"], decision.rule, self._limit_value(limit, args),
+                                           limit["window_seconds"], limit["max"])
+            if not ok:
+                what = limit.get("sum_arg") or "calls"
+                over = (f"limit exceeded for rule '{decision.rule}': {what} total would be "
+                        f"{total:g} (max {limit['max']:g} per {limit['window_seconds']:g}s)")
                 decision = Decision(APPROVE, over, decision.rule, decision.limit)
 
         if decision.effect == DENY:
@@ -150,9 +153,7 @@ class Guard:
                 raise Blocked(f"human approval refused: {decision.reason}")
             entry["approved_by_human"] = True
             if decision.limit:   # human-approved spending still counts toward the total
-                with self._usage_lock:
-                    self._usage.append((time.time(), claims["sub"], decision.rule,
-                                        self._limit_value(decision.limit, args)))
+                self.usage.add(claims["sub"], decision.rule, self._limit_value(decision.limit, args))
 
         return entry, decision, claims
 
@@ -167,20 +168,11 @@ class Guard:
         if not key:
             return 1.0
         try:
-            return float(args.get(key, 0))
+            value = float(args.get(key, 0))
         except (TypeError, ValueError):
             return float("inf")       # unparseable amounts never slip under a limit
-
-    def _over_limit(self, agent: str, decision: Decision, args: dict) -> str | None:
-        limit = decision.limit
-        since = time.time() - limit["window_seconds"]
-        used = sum(v for t, a, r, v in self._usage if t >= since and a == agent and r == decision.rule)
-        new_total = used + self._limit_value(limit, args)
-        if new_total > limit["max"]:
-            what = limit.get("sum_arg") or "calls"
-            return (f"limit exceeded for rule '{decision.rule}': {what} total would be "
-                    f"{new_total:g} (max {limit['max']:g} per {limit['window_seconds']:g}s)")
-        return None
+        # A negative (or NaN) amount would shrink the running total and make room for more.
+        return value if value >= 0 else float("inf")
 
     def _log(self, entry: dict, effect: str, reason: str, stage: str) -> None:
         """stage = the check that decided: tool, auth, scope, policy or approval."""

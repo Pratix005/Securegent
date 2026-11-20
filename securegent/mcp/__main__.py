@@ -24,6 +24,7 @@ from ..guard import AuditLog, Guard
 from ..identity import AgentRegistry
 from ..policy import Policy
 from ..slack import SlackApproval
+from ..store import MemoryUsage, SqliteUsage
 from .proxy import McpProxy
 from .upstream import HttpUpstream, _log, parse_headers
 
@@ -58,6 +59,10 @@ def main(argv=None) -> int:
     p.add_argument("--kill-switch", metavar="FILE",
                    help="if this file exists, every tool call is blocked "
                         "(default: <state-dir>/KILL_SWITCH, toggled by the dashboard)")
+    p.add_argument("--usage-db", metavar="FILE",
+                   help="SQLite file for running-limit totals, so limits survive restarts and are "
+                        "shared by all proxies using the same file (default: <state-dir>/usage.db; "
+                        "'memory' keeps them in this process only)")
     p.add_argument("--approvals", action="store_true",
                    help="wait for a human to approve/deny in the dashboard "
                         "(default: calls that need approval are refused)")
@@ -110,7 +115,9 @@ def main(argv=None) -> int:
             p.error(str(e))
     approver = (FileApprover(state, timeout=args.approval_timeout, channels=channels) if args.approvals
                 else (lambda request: False))
-    guard = Guard(registry, policy, AuditLog(audit), approver=approver)
+    usage_db = args.usage_db or str(state / "usage.db")
+    usage = MemoryUsage() if usage_db == "memory" else SqliteUsage(usage_db)
+    guard = Guard(registry, policy, AuditLog(audit), approver=approver, usage=usage)
 
     _log(f"policy={args.policy} agent={args.agent_id} scopes={scopes} audit={audit} "
          f"approvals={('dashboard+slack' if channels else 'dashboard') if args.approvals else 'refuse'}")
