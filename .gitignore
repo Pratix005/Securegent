@@ -5,3 +5,16 @@ build/
 dist/
 audit.log.jsonl
 .env
+
+# Files Securegent creates at runtime, and secrets: never commit these
+audit.jsonl
+*.audit.jsonl
+ecs*.jsonl
+*.db
+*.db-wal
+*.db-shm
+.securegent/
+.env.*
+.pypirc
+*.pem
+*.key
