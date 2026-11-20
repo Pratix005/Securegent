@@ -79,7 +79,7 @@ def main(argv=None) -> int:
                         "block drops such tools, warn only logs them (default: block)")
     p.add_argument("--listen", metavar="HOST:PORT",
                    help="serve the proxy over HTTP at http://HOST:PORT/mcp instead of stdio, for AI "
-                        "apps that connect by URL (e.g. 127.0.0.1:8765). Each client session gets its "
+                        "apps that connect by URL (e.g. 127.0.0.1:8766; the dashboard uses 8765). Each client session gets its "
                         "own upstream connection. Set SECUREGENT_LISTEN_TOKEN to require a bearer token "
                         "(required when HOST is not loopback)")
     p.add_argument("--show-all-tools", action="store_true",
