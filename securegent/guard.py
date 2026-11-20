@@ -3,6 +3,7 @@
 import json
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Callable
 
@@ -31,7 +32,7 @@ class AuditLog:
         self._lock = threading.Lock()
 
     def write(self, entry: dict) -> None:
-        entry = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), **entry}
+        entry = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "id": uuid.uuid4().hex, **entry}
         line = json.dumps(entry, default=str) + "\n"
         with self._lock, self.path.open("a", encoding="utf-8") as f:
             f.write(line)
@@ -73,7 +74,7 @@ class Guard:
     def call(self, token: str, tool: str, **args):
         """Check the call and, if allowed, run the registered tool function."""
         if tool not in self._tools:
-            self._log({"tool": tool, "args": args}, DENY, "unknown tool")
+            self._log({"tool": tool, "args": args}, DENY, "unknown tool", "tool")
             raise Blocked(f"unknown tool '{tool}'")
         entry, decision, claims = self._authorize(token, tool, args)
         result = self._tools[tool](**args)
@@ -107,14 +108,14 @@ class Guard:
         try:
             claims = self.registry.verify(token)
         except AuthError as e:
-            self._log(entry, DENY, f"auth: {e}")
+            self._log(entry, DENY, f"auth: {e}", "auth")
             raise Blocked(f"auth: {e}") from None
         entry.update(agent=claims["sub"], on_behalf_of=claims["on_behalf_of"], task=claims["task"])
 
         # 2. Was this token granted this tool? (scope)
         if not self.registry.has_scope(claims, tool):
             reason = f"tool '{tool}' not in token scopes {claims['scopes']}"
-            self._log(entry, DENY, reason)
+            self._log(entry, DENY, reason, "scope")
             raise Blocked(reason)
 
         # 3. Is this specific action allowed? (policy, including where the data came from)
@@ -139,13 +140,13 @@ class Guard:
                 decision = Decision(APPROVE, over, decision.rule, decision.limit)
 
         if decision.effect == DENY:
-            self._log(entry, DENY, decision.reason)
+            self._log(entry, DENY, decision.reason, "policy")
             raise Blocked(decision.reason)
 
         if decision.effect == APPROVE:
             approved = self.approver({**entry, "reason": decision.reason})
             if not approved:
-                self._log(entry, DENY, f"approval refused: {decision.reason}")
+                self._log(entry, DENY, f"approval refused: {decision.reason}", "approval")
                 raise Blocked(f"human approval refused: {decision.reason}")
             entry["approved_by_human"] = True
             if decision.limit:   # human-approved spending still counts toward the total
@@ -157,7 +158,7 @@ class Guard:
 
     def _record(self, entry: dict, decision: Decision, claims: dict, args: dict) -> None:
         """Write the ALLOW to the audit log (limit usage was reserved in _authorize)."""
-        self._log(entry, ALLOW, decision.reason)
+        self._log(entry, ALLOW, decision.reason, "approval" if entry.get("approved_by_human") else "policy")
 
     @staticmethod
     def _limit_value(limit: dict, args: dict) -> float:
@@ -181,5 +182,6 @@ class Guard:
                     f"{new_total:g} (max {limit['max']:g} per {limit['window_seconds']:g}s)")
         return None
 
-    def _log(self, entry: dict, effect: str, reason: str) -> None:
-        self.audit.write({**entry, "decision": effect, "reason": reason})
+    def _log(self, entry: dict, effect: str, reason: str, stage: str) -> None:
+        """stage = the check that decided: tool, auth, scope, policy or approval."""
+        self.audit.write({**entry, "decision": effect, "reason": reason, "stage": stage})

@@ -144,6 +144,20 @@ needs a random token from the link printed in your terminal, it rejects foreign 
 text under a strict Content-Security-Policy. The font (Recursive, SIL OFL) is bundled, so the
 page loads nothing from the internet.
 
+## SIEM: send decisions to Splunk, Elastic or Wazuh
+
+```
+securegent-siem --format ecs --output ecs.jsonl --follow            # Elastic Common Schema JSON
+securegent-siem --format cef --syslog siem.example.com:514 --follow # CEF over syslog
+```
+
+Every decision becomes a standard security event with a severity (1 allowed ... 8 tainted
+data blocked), the agent, the human it acts for, the rule, and MITRE ATLAS technique ids for
+likely prompt injection (`AML.T0051.001`) or data leakage (`AML.T0057`). Ready-made
+[Wazuh rules](docs/siem/wazuh-securegent-rules.xml) raise an alert when an agent is blocked
+5 times in 2 minutes (probably hijacked). Setup for Wazuh, Elastic and Splunk:
+[docs/siem](docs/siem/README.md).
+
 ## Policy packs
 
 Ready-made policies ship inside the package. Use them by name anywhere a policy file goes:
@@ -263,6 +277,7 @@ python -m unittest discover tests -v
 | `securegent/backends/` | Agent loops for a local Ollama model (free) and Claude |
 | `securegent/mcp/` | MCP proxy (`securegent-mcp`); `upstream.py` holds the stdio and HTTP transports |
 | `securegent/dashboard/` | Local web console (`securegent-dashboard`) |
+| `securegent/siem.py` | SIEM export: ECS JSON, CEF, syslog (`securegent-siem`) |
 | `securegent/approvals.py` | Human approvals shared between the proxy and the dashboard |
 | `securegent/packs/` | Bundled policy packs (`pack:mcp-filesystem`, `pack:india-finance`) |
 | `policies.json` | Example rules for the finance demos |
@@ -280,7 +295,7 @@ python -m unittest discover tests -v
 - [x] **Policy packs:** `mcp-filesystem`, `india-finance` (DPDP / Aadhaar / PCI / payments)
 - [ ] More packs: healthcare, HR, DevOps, GitHub MCP server
 - [x] **Taint tracking:** rules that know where an argument's data came from (untrusted email/web, confidential files)
-- [ ] **Standard audit format** that SIEMs (Splunk, Wazuh) can ingest
+- [x] **SIEM export:** ECS JSON and CEF, syslog, Wazuh rules, MITRE ATLAS tags (`securegent-siem`)
 - [ ] Persistent storage (SQLite/Postgres), Slack/Teams approvals
 
 ## Contributing

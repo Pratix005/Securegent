@@ -1,0 +1,52 @@
+<!--
+  Wazuh rules for Securegent (AI agent firewall) events.
+
+  Setup is in docs/siem/README.md: export events as ECS JSON with securegent-siem,
+  have the Wazuh agent read that file with log_format json, copy this file to
+  /var/ossec/etc/rules/securegent_rules.xml on the manager and restart it. Check with
+  /var/ossec/bin/wazuh-logtest by pasting one exported line.
+
+  Rule ids 100700 to 100709 are in the custom range; change them if they clash with yours.
+-->
+<group name="securegent,ai_agent,">
+
+  <rule id="100700" level="2">
+    <decoded_as>json</decoded_as>
+    <field name="event.module">^securegent$</field>
+    <description>Securegent: AI agent tool call $(event.action)</description>
+  </rule>
+
+  <rule id="100701" level="7">
+    <if_sid>100700</if_sid>
+    <field name="event.outcome">^failure$</field>
+    <description>Securegent blocked AI agent $(securegent.agent_id) calling $(event.action): $(event.reason)</description>
+  </rule>
+
+  <rule id="100702" level="10">
+    <if_sid>100701</if_sid>
+    <field name="securegent.tainted">^true$</field>
+    <description>Securegent: likely prompt injection or data exfiltration by $(securegent.agent_id) (tainted data in $(event.action))</description>
+    <group>prompt_injection,data_exfiltration,</group>
+  </rule>
+
+  <rule id="100703" level="9">
+    <if_sid>100701</if_sid>
+    <field name="securegent.stage">^auth$</field>
+    <description>Securegent: AI agent credential rejected or kill switch active: $(event.reason)</description>
+    <group>authentication_failed,</group>
+  </rule>
+
+  <rule id="100704" level="5">
+    <if_sid>100700</if_sid>
+    <field name="securegent.approved_by_human">^true$</field>
+    <description>Securegent: a human approved $(securegent.agent_id) calling $(event.action)</description>
+  </rule>
+
+  <rule id="100705" level="12" frequency="5" timeframe="120">
+    <if_matched_sid>100701</if_matched_sid>
+    <same_field>securegent.agent_id</same_field>
+    <description>Securegent: AI agent $(securegent.agent_id) blocked 5 times in 2 minutes, possibly hijacked. Consider the kill switch.</description>
+    <group>ai_agent_hijack,</group>
+  </rule>
+
+</group>

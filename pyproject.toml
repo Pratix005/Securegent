@@ -35,6 +35,7 @@ Security = "https://github.com/Pratix005/Securegent/blob/main/SECURITY.md"
 securegent-dashboard = "securegent.dashboard.__main__:main"
 securegent-mcp = "securegent.mcp.__main__:main"
 securegent-redteam = "securegent.redteam.__main__:main"
+securegent-siem = "securegent.siem:main"
 
 [tool.setuptools]
 packages = ["securegent", "securegent.backends", "securegent.redteam", "securegent.mcp",
