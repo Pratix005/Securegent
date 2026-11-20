@@ -1,6 +1,7 @@
 """End-to-end tests: a client talks to the real proxy process, which wraps a fake MCP server."""
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -9,6 +10,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FAKE_SERVER = Path(__file__).resolve().parent / "fake_mcp_server.py"
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from fake_http_mcp_server import FakeHttpMcpServer  # noqa: E402
 
 POLICY = {"sources": [{"tool": "fake.read_file", "label": "confidential"}], "rules": [
     {"id": "no-leak", "tool": "fake.write_file",
@@ -31,16 +35,21 @@ class McpProxyTests(unittest.TestCase):
         self.kill = tmp / "KILL"
         policy = tmp / "policy.json"
         policy.write_text(json.dumps(POLICY), encoding="utf-8")
+        upstream_args, env = self.upstream()
         self.proc = subprocess.Popen(
             [sys.executable, "-m", "securegent.mcp", "--policy", str(policy), "--server-name", "fake",
              "--scopes", "fake.read_file,fake.write_file", "--audit", str(self.audit),
-             "--kill-switch", str(self.kill),
-             "--", sys.executable, str(FAKE_SERVER), str(self.executed)],
-            cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+             "--kill-switch", str(self.kill), *upstream_args],
+            cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            env={**os.environ, **env})
         self.next_id = 0
         self.request("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
                                     "clientInfo": {"name": "test", "version": "0"}})
         self.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+    def upstream(self):
+        """CLI args that name the upstream server, and extra environment for the proxy."""
+        return ["--", sys.executable, str(FAKE_SERVER), str(self.executed)], {}
 
     def tearDown(self):
         self.proc.stdin.close()
@@ -121,6 +130,48 @@ class McpProxyTests(unittest.TestCase):
         entries = [json.loads(l) for l in self.audit.read_text(encoding="utf-8").splitlines()]
         self.assertEqual([(e["tool"], e["decision"]) for e in entries],
                          [("fake.read_file", "allow"), ("fake.read_file", "deny")])
+
+
+class McpProxyHttpTests(McpProxyTests):
+    """The same tests, with the server reached over Streamable HTTP (JSON and SSE replies,
+    session ids, auth header from an environment variable)."""
+
+    def upstream(self):
+        self.server = FakeHttpMcpServer(self.executed, token="s3cret")
+        return (["--upstream-url", self.server.url, "--header", "Authorization: Bearer ${FAKE_MCP_TOKEN}"],
+                {"FAKE_MCP_TOKEN": "s3cret"})
+
+    def tearDown(self):
+        super().tearDown()
+        self.server.stop()
+
+    def test_session_is_used_and_closed(self):
+        self.call("read_file", path="a")
+        self.assertTrue(self.server.session_checked)
+        self.proc.stdin.close()
+        self.proc.wait(timeout=10)
+        self.assertTrue(self.server.deleted.wait(5))
+        self.proc.stdin = open(os.devnull, "wb")      # so tearDown can close it again
+
+    def test_upstream_http_error_becomes_jsonrpc_error(self):
+        self.server.fail_method = ("tools/list", 500)
+        self.next_id += 1
+        self.send({"jsonrpc": "2.0", "id": self.next_id, "method": "tools/list", "params": {}})
+        reply = json.loads(self.proc.stdout.readline())
+        self.assertEqual(reply["id"], self.next_id)
+        self.assertIn("HTTP 500", reply["error"]["message"])
+
+
+class HttpUpstreamUnitTests(unittest.TestCase):
+    def test_headers_read_env_vars_and_reject_missing_ones(self):
+        from securegent.mcp.upstream import parse_headers
+        os.environ["SG_TEST_TOKEN"] = "abc"
+        self.assertEqual(parse_headers(["Authorization: Bearer ${SG_TEST_TOKEN}"]),
+                         {"Authorization": "Bearer abc"})
+        with self.assertRaises(ValueError):
+            parse_headers(["X-Key: ${SG_TEST_NOT_SET_ANYWHERE}"])
+        with self.assertRaises(ValueError):
+            parse_headers(["no colon here"])
 
 
 class FilesystemPolicyTests(unittest.TestCase):

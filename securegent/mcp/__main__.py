@@ -1,10 +1,16 @@
 """
-Run any stdio MCP server behind Securegent.
+Run any MCP server (local command or remote URL) behind Securegent.
 
   python -m securegent.mcp --policy pack:mcp-filesystem --server-name filesystem \\
       -- npx -y @modelcontextprotocol/server-filesystem C:/work
 
-Everything after `--` is the command that starts the real MCP server.
+Everything after `--` is the command that starts the real MCP server. For a remote
+server use --upstream-url instead:
+
+  python -m securegent.mcp --policy my-policy.json --server-name github \\
+      --upstream-url https://api.githubcopilot.com/mcp/ \\
+      --header "Authorization: Bearer ${GITHUB_TOKEN}"
+
 Point your MCP client (Claude Desktop, Claude Code, Cursor...) at this command instead.
 """
 
@@ -16,19 +22,28 @@ from ..approvals import DEFAULT_STATE_DIR, FileApprover
 from ..guard import AuditLog, Guard
 from ..identity import AgentRegistry
 from ..policy import Policy
-from .proxy import McpProxy, _log
+from .proxy import McpProxy
+from .upstream import HttpUpstream, _log, parse_headers
 
 
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    if "--" not in argv:
-        print("usage: python -m securegent.mcp [options] -- <mcp server command...>", file=sys.stderr)
-        return 2
-    split = argv.index("--")
-    ours, command = argv[:split], argv[split + 1:]
+    if "--" in argv:
+        split = argv.index("--")
+        ours, command = argv[:split], argv[split + 1:]
+    else:
+        ours, command = argv, []
 
-    p = argparse.ArgumentParser(prog="python -m securegent.mcp",
-                                description="Run an MCP server behind the Securegent policy guard.")
+    p = argparse.ArgumentParser(
+        prog="python -m securegent.mcp",
+        usage="%(prog)s [options] -- <mcp server command...>\n"
+              "       %(prog)s [options] --upstream-url https://host/mcp",
+        description="Run an MCP server behind the Securegent policy guard.")
+    p.add_argument("--upstream-url", metavar="URL",
+                   help="remote MCP server (Streamable HTTP) instead of a local command")
+    p.add_argument("--header", action="append", metavar="'Name: value'",
+                   help="HTTP header for the remote server, repeatable. ${VAR} is read from the "
+                        "environment, e.g. --header 'Authorization: Bearer ${GITHUB_TOKEN}'")
     p.add_argument("--policy", required=True, help="policy JSON file, or a bundled pack like pack:mcp-filesystem")
     p.add_argument("--server-name", required=True,
                    help="name used in policies: tools become '<server-name>.<tool>'")
@@ -49,8 +64,19 @@ def main(argv=None) -> int:
     p.add_argument("--show-all-tools", action="store_true",
                    help="don't hide tools that are outside the agent's scope")
     args = p.parse_args(ours)
-    if not command:
-        p.error("missing MCP server command after --")
+    if args.upstream_url and command:
+        p.error("give either --upstream-url or a command after --, not both")
+    if args.upstream_url:
+        try:
+            upstream = HttpUpstream(args.upstream_url, parse_headers(args.header))
+        except ValueError as e:
+            p.error(str(e))
+    elif command:
+        if args.header:
+            p.error("--header only applies to --upstream-url")
+        upstream = command
+    else:
+        p.error("missing the MCP server: a command after --, or --upstream-url")
 
     policy = Policy.from_file(args.policy)
     scopes = [s.strip() for s in args.scopes.split(",")] if args.scopes else [f"{args.server_name}.*"]
@@ -69,7 +95,7 @@ def main(argv=None) -> int:
 
     _log(f"policy={args.policy} agent={args.agent_id} scopes={scopes} audit={audit} "
          f"approvals={'dashboard' if args.approvals else 'refuse'}")
-    proxy = McpProxy(command, guard, token, args.server_name,
+    proxy = McpProxy(upstream, guard, token, args.server_name,
                      sys.stdin.buffer, sys.stdout.buffer,
                      hide_out_of_scope_tools=not args.show_all_tools,
                      kill_switch=kill_switch)

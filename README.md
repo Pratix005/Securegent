@@ -85,7 +85,7 @@ MCP is how AI apps (Claude Desktop, Claude Code, Cursor...) connect to tools lik
 files, GitHub or databases. Securegent can sit in the middle:
 
 ```
-AI app  ──►  Securegent MCP proxy  ──►  any stdio MCP server
+AI app  ──►  Securegent MCP proxy  ──►  any MCP server: local (stdio) or remote (HTTP)
              checks every tools/call against your policy, logs it, blocks it if needed
 ```
 
@@ -101,6 +101,20 @@ proxy command instead. For Claude Code:
 claude mcp add files -- securegent-mcp --policy pack:mcp-filesystem --server-name filesystem \
     --approvals -- npx -y @modelcontextprotocol/server-filesystem C:/work
 ```
+
+**Remote servers** (Streamable HTTP) work the same way: give `--upstream-url` instead of a
+command. Add headers with `--header`; `${VAR}` is read from the environment, so tokens don't
+end up in config files or process listings:
+
+```
+claude mcp add github -- securegent-mcp --policy my-github-policy.json --server-name github \
+    --upstream-url https://api.githubcopilot.com/mcp/ \
+    --header 'Authorization: Bearer ${GITHUB_TOKEN}'
+```
+
+Your AI app still starts the proxy as a local command; the proxy keeps the MCP session with
+the remote server (session ids, JSON or SSE replies, the server's own event stream) and
+closes it on exit. The older HTTP+SSE transport (2024-11-05) is not supported.
 
 - Policies see tools as `<server-name>.<tool>`, e.g. `filesystem.write_file`, so one policy
   file can cover many servers.
@@ -244,9 +258,10 @@ python -m unittest discover tests -v
 | `securegent/identity.py` | Agent registry, signed task-scoped tokens, revocation, kill switch |
 | `securegent/policy.py` | Rule engine (first match wins, default deny) |
 | `securegent/guard.py` | Checkpoint every tool call passes through, running limits, audit log |
+| `securegent/taint.py` | Taint tracking: remembers labelled tool output, finds it in later arguments |
 | `securegent/redteam/` | Attack scenarios, runner and scoring (`securegent-redteam`) |
 | `securegent/backends/` | Agent loops for a local Ollama model (free) and Claude |
-| `securegent/mcp/` | MCP proxy (`securegent-mcp`) |
+| `securegent/mcp/` | MCP proxy (`securegent-mcp`); `upstream.py` holds the stdio and HTTP transports |
 | `securegent/dashboard/` | Local web console (`securegent-dashboard`) |
 | `securegent/approvals.py` | Human approvals shared between the proxy and the dashboard |
 | `securegent/packs/` | Bundled policy packs (`pack:mcp-filesystem`, `pack:india-finance`) |
@@ -260,7 +275,8 @@ python -m unittest discover tests -v
 - [ ] More attacks: multi-step, multilingual, tool-output poisoning; community-contributed scenarios
 - [x] **MCP security proxy:** apply Securegent policies to any stdio MCP server with no code changes
 - [x] **Dashboard:** live log, activity timeline, per-agent view, approvals and kill switch
-- [ ] MCP proxy: HTTP transport
+- [x] **MCP proxy: remote servers** over Streamable HTTP (`--upstream-url`, `--header`)
+- [ ] MCP proxy: listen over HTTP too, for clients that only speak HTTP
 - [x] **Policy packs:** `mcp-filesystem`, `india-finance` (DPDP / Aadhaar / PCI / payments)
 - [ ] More packs: healthcare, HR, DevOps, GitHub MCP server
 - [x] **Taint tracking:** rules that know where an argument's data came from (untrusted email/web, confidential files)
