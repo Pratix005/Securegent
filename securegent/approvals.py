@@ -36,12 +36,19 @@ def _valid_id(request_id: str) -> bool:
 
 
 class FileApprover:
-    """An approver for Guard(..., approver=FileApprover()) that waits for the dashboard."""
+    """An approver for Guard(..., approver=FileApprover()) that waits for the dashboard.
 
-    def __init__(self, state_dir: str | Path = DEFAULT_STATE_DIR, timeout: float = 120, poll: float = 0.5):
+    `channels` are extra places to ask, such as slack.SlackApproval. Each has
+    start(id, request, timeout) -> handle|None, poll(handle) -> True/False/None,
+    finish(handle, approved, where) and a poll_interval. The first answer wins.
+    """
+
+    def __init__(self, state_dir: str | Path = DEFAULT_STATE_DIR, timeout: float = 120, poll: float = 0.5,
+                 channels: list | None = None):
         self.state_dir = Path(state_dir)
         self.timeout = timeout
         self.poll = poll
+        self.channels = list(channels or [])
 
     def __call__(self, request: dict) -> bool:
         pending, decided = _dirs(self.state_dir)
@@ -50,6 +57,15 @@ class FileApprover:
         _write_atomic(pending / f"{request_id}.json",
                       {"id": request_id, "created": now, "expires": now + self.timeout, "request": request})
         answer_file = decided / f"{request_id}.json"
+        asked = []                                   # (channel, handle, next poll time)
+        for ch in self.channels:
+            try:
+                handle = ch.start(request_id, request, self.timeout)
+            except Exception:                        # a broken channel must not break approvals
+                handle = None
+            if handle is not None:
+                asked.append([ch, handle, 0.0])
+        result, where = False, "timeout"
         try:
             while time.time() < now + self.timeout:
                 if answer_file.exists():
@@ -58,12 +74,39 @@ class FileApprover:
                     except (json.JSONDecodeError, OSError):
                         time.sleep(self.poll)
                         continue
-                    return answer.get("approved") is True
+                    result, where = answer.get("approved") is True, "dashboard"
+                    return result
+                for item in asked:
+                    ch, handle, due = item
+                    if time.time() >= due:
+                        item[2] = time.time() + getattr(ch, "poll_interval", 3.0)
+                        try:
+                            answer = ch.poll(handle)
+                        except Exception:
+                            answer = None
+                        if answer is not None:
+                            result, where = answer is True, "slack"
+                            for other in asked:          # tell the others it's settled
+                                if other is not item:
+                                    _finish(other, result, "dashboard")
+                            _finish(item, result, "slack")
+                            asked = []
+                            return result
                 time.sleep(self.poll)
             return False   # nobody answered in time: deny
         finally:
+            for item in asked:
+                _finish(item, result, where)
             (pending / f"{request_id}.json").unlink(missing_ok=True)
             answer_file.unlink(missing_ok=True)
+
+
+def _finish(item, approved: bool, where: str) -> None:
+    ch, handle, _ = item
+    try:
+        ch.finish(handle, approved, where)
+    except Exception:
+        pass
 
 
 def list_pending(state_dir: str | Path = DEFAULT_STATE_DIR) -> list[dict]:

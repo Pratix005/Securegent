@@ -15,6 +15,7 @@ Point your MCP client (Claude Desktop, Claude Code, Cursor...) at this command i
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -22,6 +23,7 @@ from ..approvals import DEFAULT_STATE_DIR, FileApprover
 from ..guard import AuditLog, Guard
 from ..identity import AgentRegistry
 from ..policy import Policy
+from ..slack import SlackApproval
 from .proxy import McpProxy
 from .upstream import HttpUpstream, _log, parse_headers
 
@@ -61,6 +63,11 @@ def main(argv=None) -> int:
                         "(default: calls that need approval are refused)")
     p.add_argument("--approval-timeout", type=float, default=120,
                    help="seconds to wait for a decision before denying (default: 120)")
+    p.add_argument("--slack-channel", metavar="CHANNEL_ID",
+                   help="also ask for approvals in this Slack channel (needs --approvals, "
+                        "--slack-approvers and SLACK_BOT_TOKEN in the environment)")
+    p.add_argument("--slack-approvers", metavar="U1,U2",
+                   help="comma-separated Slack user ids allowed to approve or deny")
     p.add_argument("--tool-check", choices=["block", "warn", "off"], default="block",
                    help="scan tool descriptions for hidden instructions and changes (rug pulls): "
                         "block drops such tools, warn only logs them (default: block)")
@@ -92,12 +99,21 @@ def main(argv=None) -> int:
     kill_switch = args.kill_switch or str(state / "KILL_SWITCH")
     # stdin/stdout carry the protocol, so there is no terminal to ask a human:
     # approvals go through the dashboard, or are refused.
-    approver = (FileApprover(state, timeout=args.approval_timeout) if args.approvals
+    channels = []
+    if args.slack_channel or args.slack_approvers:
+        if not args.approvals:
+            p.error("--slack-channel needs --approvals")
+        try:
+            channels.append(SlackApproval(os.environ.get("SLACK_BOT_TOKEN", ""), args.slack_channel or "",
+                                          (args.slack_approvers or "").split(",")))
+        except ValueError as e:
+            p.error(str(e))
+    approver = (FileApprover(state, timeout=args.approval_timeout, channels=channels) if args.approvals
                 else (lambda request: False))
     guard = Guard(registry, policy, AuditLog(audit), approver=approver)
 
     _log(f"policy={args.policy} agent={args.agent_id} scopes={scopes} audit={audit} "
-         f"approvals={'dashboard' if args.approvals else 'refuse'}")
+         f"approvals={('dashboard+slack' if channels else 'dashboard') if args.approvals else 'refuse'}")
     proxy = McpProxy(upstream, guard, token, args.server_name,
                      sys.stdin.buffer, sys.stdout.buffer,
                      hide_out_of_scope_tools=not args.show_all_tools,

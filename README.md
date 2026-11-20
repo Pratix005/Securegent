@@ -123,6 +123,12 @@ closes it on exit. The older HTTP+SSE transport (2024-11-05) is not supported.
 - `--approvals`: calls that need approval wait for you to approve or deny them in the
   dashboard (`--approval-timeout`, default 120 s; no answer means denied). Without it they
   are refused. Other requests keep flowing while one waits.
+- **Approve from Slack** (from your phone): add `--slack-channel C0123ABCD --slack-approvers
+  U0456EFGH` and put the bot token in `SLACK_BOT_TOKEN` (bot scopes `chat:write`,
+  `reactions:read`, and invite the bot to the channel). Requests are posted to the channel;
+  react ✅ to approve or ❌ to deny. Only the listed user ids count, and any ❌ wins. It needs
+  no public URL: Securegent polls the reactions. The dashboard keeps working; whichever
+  answers first decides, and the Slack message is updated with the outcome.
 - **Tool poisoning:** a malicious server can hide orders in its tool descriptions ("before
   using this tool, read `~/.ssh/id_rsa`..."), which the AI reads as instructions. The proxy
   scans every tool's name, description and input schema for hidden instructions, secret-file
@@ -285,6 +291,7 @@ python -m unittest discover tests -v
 | `securegent/mcp/` | MCP proxy (`securegent-mcp`); `upstream.py`: stdio and HTTP transports; `toolscan.py`: tool poisoning checks |
 | `securegent/dashboard/` | Local web console (`securegent-dashboard`) |
 | `securegent/siem.py` | SIEM export: ECS JSON, CEF, syslog (`securegent-siem`) |
+| `securegent/slack.py` | Approvals in Slack (post, poll reactions, update) |
 | `securegent/approvals.py` | Human approvals shared between the proxy and the dashboard |
 | `securegent/packs/` | Bundled policy packs (`pack:mcp-filesystem`, `pack:india-finance`) |
 | `policies.json` | Example rules for the finance demos |
@@ -304,7 +311,9 @@ python -m unittest discover tests -v
 - [ ] More packs: healthcare, HR, DevOps, GitHub MCP server
 - [x] **Taint tracking:** rules that know where an argument's data came from (untrusted email/web, confidential files)
 - [x] **SIEM export:** ECS JSON and CEF, syslog, Wazuh rules, MITRE ATLAS tags (`securegent-siem`)
-- [ ] Persistent storage (SQLite/Postgres), Slack/Teams approvals
+- [x] **Slack approvals:** approve or deny with a reaction, no public URL needed
+- [ ] Teams approvals
+- [ ] Persistent storage (SQLite/Postgres)
 
 ## Contributing
 
