@@ -1,0 +1,45 @@
+{
+  "name": "healthcare",
+  "version": "0.1.0",
+  "description": "Starter policy for clinical and hospital assistant agents. Inspired by the DPDP Act 2023, India's ABDM health data rules and HIPAA's minimum-necessary principle. The agent may read records for the clinician it works for, but patient data never leaves the hospital (taint), prescriptions and record changes always need a clinician, deletions are blocked and bulk lookups are limited. A technical starting point, NOT legal or medical advice. Replace 'hospital\\.example' with your domain.",
+  "tools": "ehr.search_patients(query, limit), ehr.read_record(patient_id, section), ehr.update_record(patient_id, section, value), ehr.delete_record(patient_id), rx.prescribe(patient_id, drug, dose), appointments.book(patient_id, slot), email.send(to, subject, body, attachment), sms.send(to, body), files.read(path)",
+  "sources": [
+    { "tool": ["ehr.read_record", "ehr.search_patients"], "label": "phi" },
+    { "tool": "files.read", "label": "phi",
+      "when": [{ "arg": "path", "op": "matches", "value": ".*(patient|record|lab|report|scan|discharge|prescription|ehr|emr).*" }] }
+  ],
+  "rules": [
+    { "id": "phi-out-email", "tool": "email.send",
+      "when": [{ "arg": "to", "op": "not_matches", "value": "[a-z0-9._%+-]+@hospital\\.example" },
+               { "arg": "*", "op": "tainted", "value": "phi" }],
+      "effect": "deny", "reason": "patient health information may not leave the hospital (taint)" },
+    { "id": "phi-out-sms", "tool": "sms.send", "when": [{ "arg": "body", "op": "tainted", "value": "phi" }],
+      "effect": "deny", "reason": "patient health information may not be sent by SMS (taint)" },
+    { "id": "health-ids-out", "tool": ["email.send", "sms.send"],
+      "when": [{ "arg": "body", "op": "matches", "value": "(?s).*((?<!\\d)\\d{2}-?\\d{4}-?\\d{4}-?\\d{4}(?!\\d)|(?<!\\d)[2-9]\\d{3}[ -]?\\d{4}[ -]?\\d{4}(?!\\d)).*" }],
+      "effect": "deny", "reason": "ABHA or Aadhaar number in a message" },
+    { "id": "attachments-out", "tool": "email.send",
+      "when": [{ "arg": "to", "op": "not_matches", "value": "[a-z0-9._%+-]+@hospital\\.example" },
+               { "arg": "attachment", "op": "not_equals", "value": null }],
+      "effect": "deny", "reason": "no attachments outside the hospital" },
+    { "id": "email-internal", "tool": "email.send",
+      "when": [{ "arg": "to", "op": "matches", "value": "[a-z0-9._%+-]+@hospital\\.example" }],
+      "effect": "allow", "reason": "internal email" },
+    { "id": "email-external", "tool": "email.send", "effect": "approve", "reason": "external email needs a human" },
+    { "id": "sms-reminders", "tool": "sms.send", "limit": { "max": 100, "window_seconds": 3600 },
+      "effect": "allow", "reason": "appointment reminders without health details are fine" },
+
+    { "id": "no-delete", "tool": "ehr.delete_record", "effect": "deny", "reason": "medical records are never deleted by an agent" },
+    { "id": "prescribing", "tool": "rx.*", "effect": "approve", "reason": "only a clinician can prescribe" },
+    { "id": "record-changes", "tool": "ehr.update_record", "effect": "approve", "reason": "changing a medical record needs a clinician" },
+
+    { "id": "bulk-search", "tool": "ehr.search_patients", "when": [{ "arg": "limit", "op": "gt", "value": 20 }],
+      "effect": "approve", "reason": "bulk patient lookups need a human (minimum necessary)" },
+    { "id": "records-read", "tool": ["ehr.read_record", "ehr.search_patients"],
+      "limit": { "max": 60, "window_seconds": 3600 },
+      "effect": "allow", "reason": "reading records for the treating clinician (max 60 an hour)" },
+    { "id": "appointments", "tool": "appointments.*", "limit": { "max": 50, "window_seconds": 3600 },
+      "effect": "allow", "reason": "booking appointments is fine" },
+    { "id": "files", "tool": "files.read", "effect": "allow", "reason": "reading files is fine; what leaves is checked" }
+  ]
+}

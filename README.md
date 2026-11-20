@@ -149,7 +149,9 @@ Rules are checked in order, **the first match wins**, and anything no rule allow
 `startswith`, `endswith`, `not_endswith`, `matches` / `not_matches` (whole-value regex,
 case-insensitive), `in`, `not_in`, `gt`, `gte`, `lt`, `lte`, plus the taint conditions below.
 Prefer `matches` for things like email addresses: `"x@evil.ru, a@acme.com"` *ends with*
-`@acme.com` too.
+`@acme.com` too. Use `"arg": "*"` to check **every** argument, e.g. a secret in whichever
+argument it appears: positive conditions match if any argument matches, `not_...` conditions
+only if all of them pass.
 
 ### Running limits
 
@@ -392,11 +394,17 @@ Ready-made policies ship inside the package. Use them by name anywhere a policy 
 | Pack | What it does |
 |---|---|
 | `pack:mcp-filesystem` | For the official MCP filesystem server. Reading allowed except secrets (`.env`, keys, credentials); writing only inside a `drafts` folder (max 50 writes an hour); moving or copying needs approval; anything else denied. Tested live against the official server (16 tools). |
+| `pack:github` | For the official GitHub MCP server. Reading is allowed; **once the agent has read issues, pull requests or comments, every write needs a human** (this stops the known attack where a malicious public issue makes an agent leak a private repo into a public PR). Secrets in anything written are blocked, deletes denied, merges, new repos, workflow runs and pushes to `main` need approval. |
+| `pack:devops` | For coding and DevOps agents (`shell.run`, `git.push`, `k8s.*`, `terraform.*`, `deploy.release`, `secrets.read`, `http.request`). Read-only commands run on their own; chained or changing commands need a human; `rm -rf /`, `curl \| bash`, reverse shells, force-pushes, `terraform destroy` and production deletes are blocked; secrets the agent reads can never be passed on. |
+| `pack:hr` | For HR and recruiting agents. Directory lookups allowed; salary, bank, Aadhaar, PAN and health fields, bulk exports and every change need a human; hiring and firing decisions are always made by a person; employee data never leaves the company. |
+| `pack:healthcare` | For clinical assistant agents. Records can be read for the treating clinician; prescriptions and record changes always need a clinician; patient data never leaves the hospital by email or SMS; ABHA and Aadhaar numbers are blocked in messages; deletions are denied. |
 | `pack:india-finance` | For agents handling money and personal data in India. Blocks unmasked **Aadhaar** numbers anywhere in email, full **card numbers** (PCI DSS), **PAN** and **mobile numbers** going outside the company, and personal data hidden in URLs or copied from files (taint); KYC documents need approval; payments auto-approved only for listed vendors up to Rs 1 lakh a day. Inspired by the DPDP Act 2023, Aadhaar data-handling rules and RBI-aligned payment controls. |
 
-`india-finance` is a technical starting point, **not legal advice**. Replace `acme\.com`, the
-vendor list and the website allowlist with your own, and review it with your compliance
-team. It is tested against the full red-team suite (14/14, normal work still allowed) and
+Each pack's `tools` field lists the tool names and arguments it expects. The `hr`,
+`healthcare` and `india-finance` packs are technical starting points, **not legal or medical
+advice**: review them with your compliance team, and replace the example domains
+(`acme\.com`, `hospital\.example`), vendor list and website allowlist with your own.
+`india-finance` is tested against the full red-team suite (14/14, normal work still allowed) and
 specific cases such as masked vs unmasked Aadhaar.
 
 ## SIEM: send decisions to Splunk, Elastic or Wazuh
@@ -489,7 +497,7 @@ real Wazuh manager and a real Slack workspace.
 | `securegent/siem.py` | SIEM export: ECS JSON, CEF, syslog (`securegent-siem`) |
 | `securegent/slack.py` | Approvals in Slack (post, poll reactions, update) |
 | `securegent/approvals.py` | Human approvals shared between the proxy and the dashboard |
-| `securegent/packs/` | Bundled policy packs (`pack:mcp-filesystem`, `pack:india-finance`) |
+| `securegent/packs/` | Bundled policy packs (`github`, `devops`, `hr`, `healthcare`, `india-finance`, `mcp-filesystem`) |
 | `docs/siem/` | SIEM setup and Wazuh rules |
 | `policies.json` | Example rules for the finance demos |
 | `demo.py` | Scripted prompt-injection attack |
@@ -505,7 +513,7 @@ real Wazuh manager and a real Slack workspace.
 - [x] **MCP proxy: remote servers** over Streamable HTTP (`--upstream-url`, `--header`)
 - [x] **MCP proxy: listen over HTTP** for AI apps that connect by URL (`--listen`)
 - [x] **Policy packs:** `mcp-filesystem`, `india-finance` (DPDP / Aadhaar / PCI / payments)
-- [ ] More packs: healthcare, HR, DevOps, GitHub MCP server
+- [x] **More packs:** `github` (MCP server), `devops`, `hr`, `healthcare`
 - [x] **Taint tracking:** rules that know where an argument's data came from (untrusted email/web, confidential files)
 - [x] **SIEM export:** ECS JSON and CEF, syslog, Wazuh rules, MITRE ATLAS tags (`securegent-siem`)
 - [x] **Slack approvals:** approve or deny with a reaction, no public URL needed

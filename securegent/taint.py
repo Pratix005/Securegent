@@ -41,6 +41,7 @@ _NUMBER = re.compile(r"(?<![\d.])\d{5,}(?:\.\d+)?(?![\d])")
 _WORD = re.compile(r"[a-z0-9@._%+-]+")
 _DIGIT_COMMA = re.compile(r"(?<=\d)[,_](?=\d)")
 _SPACE = re.compile(r"\s+")
+_TOKEN = re.compile(r"[a-z0-9_+/.-]{16,}")
 
 SHINGLE_WORDS = 4          # runs of this many words count as copied text
 WHOLE_VALUE_MIN = 6        # shorter values ("yes", "42") are too common to mean anything
@@ -77,6 +78,9 @@ def pieces(value) -> list[str]:
         found += _EMAIL.findall(text)
         found += [u.rstrip(".,;)") for u in _URL.findall(text)]
         found += _NUMBER.findall(text)
+        # Long opaque tokens (API keys, hashes, ids) with letters and digits: "key=sk_live_51H..."
+        found += [tok.strip("._-") for tok in _TOKEN.findall(text)
+                  if any(c.isdigit() for c in tok) and any(c.isalpha() for c in tok)]
         words = _WORD.findall(text)
         found += [" ".join(words[i:i + SHINGLE_WORDS]) for i in range(len(words) - SHINGLE_WORDS + 1)]
     return list(dict.fromkeys(p for p in found if p))   # unique, order kept
@@ -124,6 +128,9 @@ class TaintTracker:
         text = normalize(" ".join(flatten(output)))
         if not text:
             return
+        # Also keep the bare word sequence, so "type 2 diabetes, hba1c" in the source still
+        # matches the run of words "type 2 diabetes hba1c" copied without the comma.
+        text = text + "\n" + " ".join(_WORD.findall(text))
         with self._lock:
             s = self._session(session)
             s.sources.append((label, origin, text))

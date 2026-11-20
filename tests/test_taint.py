@@ -51,6 +51,17 @@ class TaintTrackerTests(unittest.TestCase):
         self.assertEqual(t.taint_of("s", "finance@acme.com"), [])
         self.assertTrue(t.taint_of("s", "x@evil.ru"))
 
+    def test_api_keys_are_pieces_even_inside_key_value_text(self):
+        t = TaintTracker()
+        t.record("s", "secret", "secrets.read", "sk_" "live_51HxQ2PZ9aBcDeFgHiJkLmNo")
+        self.assertTrue(t.taint_of("s", "key=sk_" "live_51HxQ2PZ9aBcDeFgHiJkLmNo&x=1"))
+        self.assertEqual(t.taint_of("s", "internationalization"), [])     # long plain words are not keys
+
+    def test_punctuation_does_not_hide_copied_phrases(self):
+        t = TaintTracker()
+        t.record("s", "phi", "ehr.read_record", "diagnosis: type 2 diabetes, HbA1c 8.2")
+        self.assertTrue(t.taint_of("s", "He has type 2 diabetes HbA1c 8.2"))
+
     def test_sessions_are_separate(self):
         t = TaintTracker()
         t.record("a", "untrusted", "web.fetch", WEB)

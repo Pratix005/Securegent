@@ -1,0 +1,52 @@
+{
+  "name": "github",
+  "version": "0.1.0",
+  "description": "Policy for the official GitHub MCP server (github/github-mcp-server), run with --server-name github. Reading is allowed. Once the agent has read issues, pull requests or comments (text anyone on the internet can write), every write needs a human: this stops the known attack where a malicious public issue makes an agent leak private repository data into a public pull request. Secrets in anything written are blocked, deletions are denied, merges, new repositories, workflow runs and pushes to main need approval, and anything else is denied.",
+  "tools": "github.get_*, github.list_*, github.search_*, create_or_update_file(owner, repo, path, content, branch), push_files(owner, repo, branch, files), create_issue / update_issue / add_issue_comment(body), create_pull_request(title, body, head, base), merge_pull_request, create_branch, create_repository, fork_repository, run_workflow, delete_file",
+  "sources": [
+    { "tool": ["github.get_issue*", "github.list_issues", "github.search_issues",
+               "github.get_pull_request*", "github.list_pull_requests", "github.search_pull_requests",
+               "github.list_*comments*", "github.get_*comments*", "github.list_notifications",
+               "github.get_discussion*", "github.list_discussions"],
+      "label": "untrusted" },
+    { "tool": ["github.get_file_contents", "github.search_code", "github.get_commit", "github.list_commits"],
+      "label": "repo-content" }
+  ],
+  "rules": [
+    { "id": "no-deleting", "tool": ["github.delete_*", "github.*_delete*"], "effect": "deny",
+      "reason": "agents may not delete files, branches or repositories" },
+
+    { "id": "secret-in-write", "tool": ["github.create_or_update_file", "github.push_files", "github.create_issue",
+                                        "github.update_issue", "github.add_issue_comment", "github.create_pull_request",
+                                        "github.update_pull_request", "github.add_*comment*", "github.create_*review*"],
+      "when": [{ "arg": "*", "op": "matches",
+                 "value": "(?s).*(gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY|xox[abpors]-[0-9A-Za-z-]{10,}|sk-[A-Za-z0-9_-]{30,}|AIza[0-9A-Za-z_-]{35}).*" }],
+      "effect": "deny", "reason": "the content looks like it contains a secret (token, key or password)" },
+
+    { "id": "write-after-untrusted", "tool": ["github.create_or_update_file", "github.push_files", "github.create_issue",
+                                              "github.update_issue", "github.add_issue_comment", "github.create_pull_request",
+                                              "github.update_pull_request", "github.create_branch", "github.add_*comment*",
+                                              "github.create_*review*", "github.fork_repository"],
+      "when": [{ "op": "session_tainted", "value": "untrusted" }],
+      "effect": "approve",
+      "reason": "the agent has read issue or pull request text that anyone can write; a human must check this write (prompt injection risk)" },
+
+    { "id": "merge-needs-human", "tool": "github.merge_pull_request", "effect": "approve",
+      "reason": "merging needs a human" },
+    { "id": "new-repo-needs-human", "tool": ["github.create_repository", "github.fork_repository"], "effect": "approve",
+      "reason": "creating or forking repositories needs a human" },
+    { "id": "workflows-need-human", "tool": ["github.run_workflow", "github.rerun_*", "github.cancel_workflow_run"],
+      "effect": "approve", "reason": "running CI workflows needs a human" },
+    { "id": "push-to-main-needs-human", "tool": ["github.create_or_update_file", "github.push_files"],
+      "when": [{ "arg": "branch", "op": "matches", "value": "(main|master|release.*|prod.*)" }],
+      "effect": "approve", "reason": "writing directly to a protected branch needs a human" },
+
+    { "id": "read", "tool": ["github.get_*", "github.list_*", "github.search_*"], "effect": "allow",
+      "reason": "reading is fine" },
+    { "id": "writes", "tool": ["github.create_or_update_file", "github.push_files", "github.create_branch",
+                               "github.create_issue", "github.update_issue", "github.add_issue_comment",
+                               "github.create_pull_request", "github.update_pull_request"],
+      "limit": { "max": 30, "window_seconds": 3600 },
+      "effect": "allow", "reason": "ordinary writes (max 30 an hour)" }
+  ]
+}

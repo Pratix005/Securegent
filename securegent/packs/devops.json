@@ -1,0 +1,68 @@
+{
+  "name": "devops",
+  "version": "0.1.0",
+  "description": "Starter policy for DevOps and coding agents that run shell commands, push code and change infrastructure. Read-only commands run on their own; anything that changes things needs a human; destructive or exfiltrating commands are blocked; secrets the agent reads can never be passed on (taint). Before use, adjust the namespace and branch names to yours.",
+  "tools": "shell.run(command), git.push(remote, branch, force), k8s.get / k8s.apply / k8s.delete(namespace, ...), terraform.plan / terraform.apply / terraform.destroy(workspace), deploy.release(environment, version), secrets.read(name), http.request(method, url, body)",
+  "sources": [
+    { "tool": "secrets.read", "label": "secret" },
+    { "tool": "shell.run", "label": "secret",
+      "when": [{ "arg": "command", "op": "matches", "value": "(?s).*(\\.env|id_rsa|id_ed25519|\\.pem|credentials|\\.aws/|\\.kube/config|printenv|\\benv\\b).*" }] },
+    { "tool": "http.request", "label": "untrusted" }
+  ],
+  "rules": [
+    { "id": "secret-leaves", "tool": ["shell.run", "http.request", "git.push", "deploy.release"],
+      "when": [{ "arg": "*", "op": "tainted", "value": "secret" }],
+      "effect": "deny", "reason": "this would pass on a secret the agent read earlier (taint)" },
+
+    { "id": "destructive-shell", "tool": "shell.run",
+      "when": [{ "arg": "command", "op": "matches",
+                 "value": "(?s).*(rm\\s+-[a-z]*r[a-z]*f?\\s+(/|~|\\*|\\$HOME)(\\s|$)|rm\\s+-[a-z]*f[a-z]*r|mkfs|\\bdd\\s+if=|:\\(\\)\\s*\\{|chmod\\s+(-R\\s+)?777\\s+/|\\bshutdown\\b|\\breboot\\b|history\\s+-c|git\\s+push\\s+.*(--force|-f\\b)|DROP\\s+(TABLE|DATABASE)|TRUNCATE\\s+TABLE).*" }],
+      "effect": "deny", "reason": "destructive command" },
+    { "id": "remote-code-or-exfil", "tool": "shell.run",
+      "when": [{ "arg": "command", "op": "matches",
+                 "value": "(?s).*((curl|wget)[^|]*\\|\\s*(ba|z)?sh|base64\\s+(-d|--decode)[^|]*\\|\\s*(ba|z)?sh|\\bnc\\b.*\\s-e\\s|/dev/tcp/|\\bscp\\b|\\brsync\\b.*@|curl\\s+.*(-d|--data|-F|--upload-file|-T)\\s).*" }],
+      "effect": "deny", "reason": "downloads and runs code, or sends data off the machine" },
+    { "id": "secret-files-in-shell", "tool": "shell.run",
+      "when": [{ "arg": "command", "op": "matches", "value": "(?s).*(/etc/shadow|\\.env\\b|\\.ssh/|id_rsa|id_ed25519|\\.aws/credentials|\\.kube/config|\\.npmrc|\\.pypirc|\\.netrc).*" }],
+      "effect": "approve", "reason": "touches credential files: a human must check" },
+
+    { "id": "read-only-shell", "tool": "shell.run",
+      "when": [{ "arg": "command", "op": "matches",
+                 "value": "\\s*(ls|pwd|whoami|cat|head|tail|grep|rg|find|wc|du|df|ps|uptime|echo|which|git\\s+(status|log|diff|show|branch|remote\\s+-v)|kubectl\\s+(get|describe|logs|top)|terraform\\s+(plan|validate|fmt\\s+-check|show)|docker\\s+(ps|images|logs|inspect)|npm\\s+(test|ls)|pytest|python\\s+-m\\s+(pytest|unittest))\\b[^;&|`$<>]*" }],
+      "limit": { "max": 300, "window_seconds": 3600 },
+      "effect": "allow", "reason": "read-only command without chaining or redirection" },
+    { "id": "other-shell", "tool": "shell.run", "effect": "approve",
+      "reason": "commands that can change things need a human" },
+
+    { "id": "force-push", "tool": "git.push", "when": [{ "arg": "force", "op": "equals", "value": true }],
+      "effect": "deny", "reason": "force-pushing rewrites history" },
+    { "id": "push-protected", "tool": "git.push",
+      "when": [{ "arg": "branch", "op": "matches", "value": "(main|master|release.*|prod.*)" }],
+      "effect": "approve", "reason": "pushing to a protected branch needs a human" },
+    { "id": "push-feature", "tool": "git.push", "effect": "allow", "reason": "pushing a feature branch is fine" },
+
+    { "id": "k8s-read", "tool": ["k8s.get", "k8s.describe", "k8s.logs"], "effect": "allow", "reason": "reading is fine" },
+    { "id": "k8s-prod-delete", "tool": "k8s.delete",
+      "when": [{ "arg": "namespace", "op": "matches", "value": "(prod.*|production|kube-system|default)" }],
+      "effect": "deny", "reason": "agents may not delete in production or system namespaces" },
+    { "id": "k8s-change", "tool": ["k8s.apply", "k8s.delete", "k8s.scale", "k8s.rollout*"], "effect": "approve",
+      "reason": "changing the cluster needs a human" },
+
+    { "id": "tf-plan", "tool": ["terraform.plan", "terraform.validate", "terraform.show"], "effect": "allow",
+      "reason": "planning changes nothing" },
+    { "id": "tf-destroy", "tool": "terraform.destroy", "effect": "deny", "reason": "agents may not destroy infrastructure" },
+    { "id": "tf-apply", "tool": "terraform.apply", "effect": "approve", "reason": "applying infrastructure changes needs a human" },
+
+    { "id": "deploy-prod", "tool": "deploy.release",
+      "when": [{ "arg": "environment", "op": "matches", "value": "(prod.*|production|live)" }],
+      "effect": "approve", "reason": "production deployments need a human" },
+    { "id": "deploy-other", "tool": "deploy.release", "limit": { "max": 10, "window_seconds": 3600 },
+      "effect": "allow", "reason": "deploying to test environments is fine (max 10 an hour)" },
+
+    { "id": "secrets-read", "tool": "secrets.read", "effect": "approve", "reason": "reading a secret needs a human" },
+
+    { "id": "http-read", "tool": "http.request", "when": [{ "arg": "method", "op": "in", "value": ["GET", "HEAD", "get", "head"] }],
+      "effect": "allow", "reason": "reading web pages and APIs is fine" },
+    { "id": "http-write", "tool": "http.request", "effect": "approve", "reason": "sending data to the web needs a human" }
+  ]
+}

@@ -33,6 +33,7 @@ _OPS = {
 #   {"arg": "to",  "op": "not_tainted"}
 #   {"op": "session_tainted", "value": "untrusted"}       (no "arg")
 _TAINT_OPS = {"tainted", "not_tainted", "session_tainted"}
+# "arg": "*" applies a condition to every argument: e.g. a secret in any of them.
 
 
 PACKS_DIR = Path(__file__).parent / "packs"
@@ -145,6 +146,13 @@ class Policy:
     @staticmethod
     def _check(cond: dict, args: dict, taint=None) -> bool:
         op = cond["op"]
+        if cond.get("arg") == "*" and op != "session_tainted":
+            # "Any argument": positive conditions need one argument to match, negative
+            # ones (not_...) need every argument to pass. No arguments never matches.
+            if not args:
+                return False
+            results = (Policy._check({**cond, "arg": name}, args, taint) for name in args)
+            return all(results) if op.startswith("not_") else any(results)
         if op in _TAINT_OPS:
             if taint is None:
                 return False

@@ -1,0 +1,47 @@
+{
+  "name": "hr",
+  "version": "0.1.0",
+  "description": "Starter policy for HR and recruiting agents. Inspired by the DPDP Act 2023 (purpose limitation, data minimisation) and the principle that automated decisions about people need a human. Reading the directory is fine; sensitive fields (salary, bank, Aadhaar, PAN, health) and every change need a human; deleting records and sending employee data outside the company are blocked; hiring and firing decisions are always made by a person. A technical starting point, NOT legal advice. Replace 'acme\\.com' with your company's email domain.",
+  "tools": "hr.search_employees(query, limit), hr.read_employee(employee_id, fields), hr.update_employee(employee_id, field, value), hr.delete_employee(employee_id), hr.decide_candidate(candidate_id, decision), hr.terminate(employee_id), payroll.run(month), email.send(to, subject, body, attachment), files.read(path)",
+  "sources": [
+    { "tool": ["hr.read_employee", "hr.search_employees", "payroll.*"], "label": "personal" },
+    { "tool": "files.read", "label": "personal",
+      "when": [{ "arg": "path", "op": "matches", "value": ".*(employee|staff|payroll|salar|resume|cv|candidate|appraisal|medical|hr/).*" }] }
+  ],
+  "rules": [
+    { "id": "personal-data-out", "tool": "email.send",
+      "when": [{ "arg": "to", "op": "not_matches", "value": "[a-z0-9._%+-]+@acme\\.com" },
+               { "arg": "*", "op": "tainted", "value": "personal" }],
+      "effect": "deny", "reason": "employee personal data may not leave the company (DPDP, taint)" },
+    { "id": "id-numbers-out", "tool": "email.send",
+      "when": [{ "arg": "to", "op": "not_matches", "value": "[a-z0-9._%+-]+@acme\\.com" },
+               { "arg": "body", "op": "matches", "value": "(?s).*((?<!\\d)[2-9]\\d{3}[ -]?\\d{4}[ -]?\\d{4}(?!\\d)|\\b[A-Z]{3}[ABCFGHLJPT][A-Z]\\d{4}[A-Z]\\b).*" }],
+      "effect": "deny", "reason": "Aadhaar or PAN number sent outside the company" },
+    { "id": "attachments-out", "tool": "email.send",
+      "when": [{ "arg": "to", "op": "not_matches", "value": "[a-z0-9._%+-]+@acme\\.com" },
+               { "arg": "attachment", "op": "not_equals", "value": null }],
+      "effect": "deny", "reason": "no attachments outside the company" },
+    { "id": "email-internal", "tool": "email.send",
+      "when": [{ "arg": "to", "op": "matches", "value": "[a-z0-9._%+-]+@acme\\.com" }],
+      "effect": "allow", "reason": "email to one internal address" },
+    { "id": "email-external", "tool": "email.send", "effect": "approve", "reason": "external email needs a human" },
+
+    { "id": "no-delete", "tool": "hr.delete_employee", "effect": "deny", "reason": "agents may not delete employee records" },
+    { "id": "people-decisions", "tool": ["hr.decide_candidate", "hr.terminate", "hr.promote", "hr.rate_performance"],
+      "effect": "approve", "reason": "decisions about people are made by a person, not an agent" },
+    { "id": "payroll", "tool": "payroll.*", "effect": "approve", "reason": "payroll needs a human" },
+    { "id": "updates", "tool": "hr.update_employee", "effect": "approve", "reason": "changing employee records needs a human" },
+
+    { "id": "sensitive-fields", "tool": "hr.read_employee",
+      "when": [{ "arg": "fields", "op": "matches", "value": "(?s).*(salar|ctc|bank|ifsc|account|aadhaar|aadhar|pan\\b|medical|health|disab|religion|caste).*" }],
+      "effect": "approve", "reason": "sensitive personal data needs a human (DPDP data minimisation)" },
+    { "id": "bulk-search", "tool": "hr.search_employees",
+      "when": [{ "arg": "limit", "op": "gt", "value": 50 }],
+      "effect": "approve", "reason": "bulk exports of employee data need a human" },
+    { "id": "directory", "tool": ["hr.read_employee", "hr.search_employees"],
+      "limit": { "max": 200, "window_seconds": 3600 },
+      "effect": "allow", "reason": "reading names, roles and teams is fine (max 200 lookups an hour)" },
+
+    { "id": "files", "tool": "files.read", "effect": "allow", "reason": "reading files is fine; what leaves is checked" }
+  ]
+}
