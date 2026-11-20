@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Wazuh rules: blocked events never reached the Securegent rules, because Wazuh's generic
+  rule 1002 claims any log line containing "failure" or "denied" first. The "blocked 5
+  times" alert also counted wrongly. Both found and fixed by testing in a real Wazuh 4.9.2
+  manager; all rules now fire as documented.
+
 ## 0.2.0 (2026-11-20)
 
 ### New

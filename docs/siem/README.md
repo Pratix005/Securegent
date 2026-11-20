@@ -53,8 +53,8 @@ scope, policy, approval), `task`, `args` (JSON string), `approved_by_human`, `ta
 
 The rules: any Securegent event (level 2), blocked call (7), human approval (5), credential
 or kill-switch failure (9), tainted data (10), and **the same agent blocked 5 times in 2
-minutes (12)**, a strong sign it has been hijacked. Test them with `wazuh-logtest` by
-pasting an exported line.
+minutes (12)**, a strong sign it has been hijacked. Tested with Wazuh 4.9.2's `wazuh-logtest`
+against real exported events; test your own setup by pasting an exported line.
 
 ## Elastic (Filebeat)
 
