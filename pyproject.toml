@@ -37,6 +37,7 @@ securegent-dashboard = "securegent.dashboard.__main__:main"
 securegent-mcp = "securegent.mcp.__main__:main"
 securegent-redteam = "securegent.redteam.__main__:main"
 securegent-siem = "securegent.siem:main"
+securegent-teams = "securegent.teams:main"
 
 [tool.setuptools]
 packages = ["securegent", "securegent.backends", "securegent.redteam", "securegent.mcp",

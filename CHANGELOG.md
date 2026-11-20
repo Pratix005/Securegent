@@ -2,7 +2,24 @@
 
 ## Unreleased
 
+### New
+
+- **Microsoft Teams approvals** (`--teams-target`, `--teams-approvers`, `securegent-teams login`):
+  approve with a reaction in a group chat or channel, via Microsoft Graph, no public URL.
+- **PostgreSQL store** for running limits shared across machines (`securegent[postgres]`,
+  `--usage-db postgresql://...`). Tested with PostgreSQL 16.4.
+- **Four new policy packs:** `github` (GitHub MCP server, stops the public-issue-to-private-repo
+  leak), `devops`, `hr`, `healthcare`.
+- **Community attack scenarios:** write attacks as JSON in `attacks/` and run them with
+  `securegent-redteam --scenarios`. Two new attacks: GST refund fee, vendor reply-to swap.
+- Policies: `"arg": "*"` applies a condition to every argument.
+
 ### Fixed
+
+- Postgres: proxies starting at the same moment crashed on table setup (found by testing
+  8 processes against a real database).
+- Taint tracking missed API keys copied inside other text (`key=sk_live_...`) and phrases
+  copied without their punctuation. Both are caught now.
 
 - Wazuh rules: blocked events never reached the Securegent rules, because Wazuh's generic
   rule 1002 claims any log line containing "failure" or "denied" first. The "blocked 5

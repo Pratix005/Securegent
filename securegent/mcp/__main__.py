@@ -24,6 +24,7 @@ from ..guard import AuditLog, Guard
 from ..identity import AgentRegistry
 from ..policy import Policy
 from ..slack import SlackApproval
+from ..teams import TeamsApproval, TeamsAuth
 from ..store import open_usage
 from .listen import TOKEN_ENV, HttpListener
 from .proxy import McpProxy
@@ -75,6 +76,11 @@ def main(argv=None) -> int:
                         "--slack-approvers and SLACK_BOT_TOKEN in the environment)")
     p.add_argument("--slack-approvers", metavar="U1,U2",
                    help="comma-separated Slack user ids allowed to approve or deny")
+    p.add_argument("--teams-target", metavar="chat:<id>|channel:<team>/<channel>",
+                   help="also ask for approvals in Microsoft Teams (needs --approvals, --teams-approvers "
+                        "and a one-time `securegent-teams login`)")
+    p.add_argument("--teams-approvers", metavar="EMAILS",
+                   help="comma-separated emails (or Entra user ids) allowed to approve or deny in Teams")
     p.add_argument("--tool-check", choices=["block", "warn", "off"], default="block",
                    help="scan tool descriptions for hidden instructions and changes (rug pulls): "
                         "block drops such tools, warn only logs them (default: block)")
@@ -121,6 +127,14 @@ def main(argv=None) -> int:
                                           (args.slack_approvers or "").split(",")))
         except ValueError as e:
             p.error(str(e))
+    if args.teams_target or args.teams_approvers:
+        if not args.approvals:
+            p.error("--teams-target needs --approvals")
+        try:
+            channels.append(TeamsApproval(TeamsAuth(state / "teams-token.json"), args.teams_target or "",
+                                          (args.teams_approvers or "").split(",")))
+        except ValueError as e:
+            p.error(str(e))
     approver = (FileApprover(state, timeout=args.approval_timeout, channels=channels) if args.approvals
                 else (lambda request: False))
     usage_db = args.usage_db or str(state / "usage.db")
@@ -133,7 +147,7 @@ def main(argv=None) -> int:
     guard = Guard(registry, policy, AuditLog(audit), approver=approver, usage=usage)
 
     _log(f"policy={args.policy} agent={args.agent_id} scopes={scopes} audit={audit} "
-         f"approvals={('dashboard+slack' if channels else 'dashboard') if args.approvals else 'refuse'}")
+         f"approvals={'+'.join(['dashboard'] + [type(c).__name__.replace('Approval', '').lower() for c in channels]) if args.approvals else 'refuse'}")
     options = dict(hide_out_of_scope_tools=not args.show_all_tools,
                    kill_switch=kill_switch, tool_check=args.tool_check)
 

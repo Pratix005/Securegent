@@ -40,7 +40,8 @@ class FileApprover:
 
     `channels` are extra places to ask, such as slack.SlackApproval. Each has
     start(id, request, timeout) -> handle|None, poll(handle) -> True/False/None,
-    finish(handle, approved, where) and a poll_interval. The first answer wins.
+    finish(handle, approved, where) and a poll_interval. The first answer wins; where tells
+    each channel who decided: here, dashboard, other (another channel) or timeout.
     """
 
     def __init__(self, state_dir: str | Path = DEFAULT_STATE_DIR, timeout: float = 120, poll: float = 0.5,
@@ -85,11 +86,11 @@ class FileApprover:
                         except Exception:
                             answer = None
                         if answer is not None:
-                            result, where = answer is True, "slack"
+                            result, where = answer is True, "here"
                             for other in asked:          # tell the others it's settled
                                 if other is not item:
-                                    _finish(other, result, "dashboard")
-                            _finish(item, result, "slack")
+                                    _finish(other, result, "other")
+                            _finish(item, result, "here")
                             asked = []
                             return result
                 time.sleep(self.poll)

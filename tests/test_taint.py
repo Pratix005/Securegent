@@ -29,6 +29,8 @@ RULES = [
 WEB = "Contact us at billing@evil.example. Visit https://evil.example/x for more. Ref 7781234."
 SALARIES = "name,salary\nPriya,2400000\nRahul,1800000"
 
+FAKE_KEY = "sk_" + "live_" + "51HxQ2PZ9aBcDeFgHiJkLmNo"   # built at runtime: not a real key
+
 
 class TaintTrackerTests(unittest.TestCase):
     def test_pieces_cover_emails_urls_numbers_and_word_runs(self):
@@ -53,8 +55,8 @@ class TaintTrackerTests(unittest.TestCase):
 
     def test_api_keys_are_pieces_even_inside_key_value_text(self):
         t = TaintTracker()
-        t.record("s", "secret", "secrets.read", "sk_" "live_51HxQ2PZ9aBcDeFgHiJkLmNo")
-        self.assertTrue(t.taint_of("s", "key=sk_" "live_51HxQ2PZ9aBcDeFgHiJkLmNo&x=1"))
+        t.record("s", "secret", "secrets.read", FAKE_KEY)
+        self.assertTrue(t.taint_of("s", "key=" + FAKE_KEY + "&x=1"))
         self.assertEqual(t.taint_of("s", "internationalization"), [])     # long plain words are not keys
 
     def test_punctuation_does_not_hide_copied_phrases(self):

@@ -135,11 +135,12 @@ class SlackApproval:
         return None
 
     def finish(self, handle, approved: bool | None, where: str) -> None:
-        """Update the message with the outcome. where = slack, dashboard or timeout."""
+        """Update the message with the outcome. where = here, dashboard, other or timeout."""
         if where == "timeout":
             outcome = ":hourglass: *Expired: denied* (nobody answered in time)"
         else:
-            who = (" by " + ", ".join(f"<@{u}>" for u in handle.get("by", []))) if where == "slack" else " in the dashboard"
+            who = {"here": " by " + ", ".join(f"<@{u}>" for u in handle.get("by", [])),
+                   "dashboard": " in the dashboard"}.get(where, " in another app")
             outcome = (":white_check_mark: *Approved*" if approved else ":x: *Denied*") + who
         lines = handle["text"].splitlines()
         text = "\n".join(lines[:-1] + [outcome])

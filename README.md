@@ -34,7 +34,7 @@ Securegent sits **outside the model** and checks every tool call before it runs:
 - [Quick start (Python)](#quick-start-python)
 - [Writing policies](#writing-policies): conditions, running limits, taint tracking
 - [MCP proxy](#mcp-proxy-protect-any-ai-app-with-no-code-changes): Claude Desktop, Claude Code, Cursor, remote servers, tool poisoning
-- [Approvals: dashboard and Slack](#approvals-dashboard-and-slack)
+- [Approvals: dashboard, Slack and Teams](#approvals-dashboard-slack-and-teams)
 - [Red-team suite](#red-team-suite-attack-your-agent-get-a-score)
 - [Policy packs](#policy-packs)
 - [SIEM: Splunk, Elastic, Wazuh](#siem-send-decisions-to-splunk-elastic-or-wazuh)
@@ -61,9 +61,10 @@ Needs **Python 3.10 or newer**. The core has **no dependencies**.
 ```
 pip install securegent              # or: pip install --upgrade securegent
 pip install "securegent[claude]"    # also installs the Anthropic SDK, for Claude-powered demos
+pip install "securegent[postgres]"  # PostgreSQL store for limits shared across machines
 ```
 
-This gives you four commands:
+This gives you five commands:
 
 | Command | What it does |
 |---|---|
@@ -71,6 +72,7 @@ This gives you four commands:
 | `securegent-dashboard` | Local web console: live log, approvals, kill switch |
 | `securegent-redteam` | Attack your policy or agent with 14 prompt injections and get a score |
 | `securegent-siem` | Export decisions to Splunk, Elastic, Wazuh, QRadar... |
+| `securegent-teams` | One-time sign-in for Microsoft Teams approvals |
 
 Each also runs as a module (`python -m securegent.mcp`, `python -m securegent.dashboard`, ...).
 
@@ -173,7 +175,10 @@ from securegent.store import SqliteUsage
 guard = Guard(registry, policy, audit, usage=SqliteUsage("usage.db"))
 ```
 
-The MCP proxy does this by default (`~/.securegent/usage.db`).
+The MCP proxy does this by default (`~/.securegent/usage.db`). To share limits between
+**machines**, use PostgreSQL: `pip install "securegent[postgres]"`, then
+`--usage-db postgresql://user@dbhost/securegent` (password in `PGPASSWORD`) or
+`PostgresUsage(dsn)` in Python. Tested with PostgreSQL 16.
 
 ### Taint tracking: where did this data come from?
 
@@ -304,7 +309,7 @@ Tested live against the official MCP `filesystem` server (over stdio, `--listen`
 `--upstream-url`) and the `everything` server over Streamable HTTP. All options:
 `securegent-mcp --help`.
 
-## Approvals: dashboard and Slack
+## Approvals: dashboard, Slack and Teams
 
 Rules with `"effect": "approve"`, and calls over a running limit, need a human. Without
 `--approvals` the proxy refuses them. With it, they wait for a decision (default 120 s,
@@ -351,6 +356,31 @@ securegent-mcp --policy pack:mcp-filesystem --server-name filesystem --approvals
 Only the listed member ids count, and any ❌ wins. If something is set up wrong, the proxy
 says how to fix it (missing scope, bot not in channel, bad token) and falls back to the
 dashboard.
+
+### Microsoft Teams
+
+Same idea: requests are posted to a Teams **group chat** (or a channel) through Microsoft
+Graph; react 👍 to approve or 😠 / 👎 to deny. No public URL, and a group chat needs **no
+admin consent**, so it works with most work and college accounts.
+
+1. In the [Azure portal](https://portal.azure.com) → *Microsoft Entra ID* → *App
+   registrations* → *New registration* ("this organizational directory only"). Under
+   *Authentication*, set **Allow public client flows** to *Yes*. Under *API permissions*, add
+   Microsoft Graph **delegated** permissions `Chat.ReadWrite` and `User.ReadBasic.All`.
+2. Sign in once (device code; the refresh token is stored in `~/.securegent/teams-token.json`):
+   ```
+   securegent-teams login --tenant <Directory (tenant) ID> --client-id <Application (client) ID>
+   securegent-teams chats          # shows chat:<id> for your chats
+   ```
+3. Run the proxy with the chat and the people allowed to decide:
+   ```
+   securegent-mcp ... --approvals --teams-target "chat:19:...@thread.v2" --teams-approvers you@college.edu
+   ```
+
+For a channel, use `--teams-target channel:<team id>/<channel id>` and log in with
+`--channels` (adds `ChannelMessage.Send` and `ChannelMessage.Read.All`, which needs an admin).
+Slack, Teams and the dashboard can all be active at once; the first answer decides and the
+others are told.
 
 ## Red-team suite: attack your agent, get a score
 
@@ -438,6 +468,7 @@ an alert for every block and a level-12 alert when one agent is blocked 5 times 
 | `usage.db` | Running-limit totals, SQLite (`--usage-db`; `memory` to keep them in the process) |
 | `KILL_SWITCH` | While this file exists, every call is blocked (`--kill-switch` to change) |
 | `approvals/` | Requests waiting for a decision, shared with the dashboard |
+| `teams-token.json` | Teams sign-in (refresh token) from `securegent-teams login`; keep it private |
 
 **Environment variables:**
 
@@ -446,6 +477,7 @@ an alert for every block and a level-12 alert when one agent is blocked 5 times 
 | `SECUREGENT_SECRET` | Key that signs agent tokens. Unset means a random key per process (fine for one process). |
 | `SLACK_BOT_TOKEN` | Slack approvals |
 | `SECUREGENT_LISTEN_TOKEN` | Bearer token required by `securegent-mcp --listen` |
+| `PGPASSWORD` | Password for a `postgresql://` usage store (keep it out of the URL) |
 | `ANTHROPIC_API_KEY` | Claude backend for the red-team agent mode and demos |
 | any `${VAR}` | Values in `securegent-mcp --header` |
 
@@ -494,7 +526,7 @@ real Wazuh manager and a real Slack workspace.
 | `securegent/identity.py` | Agent registry, signed task-scoped tokens, revocation, kill switch |
 | `securegent/policy.py` | Rule engine (first match wins, default deny) |
 | `securegent/guard.py` | Checkpoint every tool call passes through, running limits, audit log |
-| `securegent/store.py` | Where running-limit totals live: memory or SQLite |
+| `securegent/store.py` | Where running-limit totals live: memory, SQLite or PostgreSQL |
 | `securegent/taint.py` | Taint tracking: remembers labelled tool output, finds it in later arguments |
 | `securegent/redteam/` | Attack scenarios, runner and scoring (`securegent-redteam`) |
 | `securegent/backends/` | Agent loops for a local Ollama model (free) and Claude |
@@ -502,6 +534,7 @@ real Wazuh manager and a real Slack workspace.
 | `securegent/dashboard/` | Local web console (`securegent-dashboard`) |
 | `securegent/siem.py` | SIEM export: ECS JSON, CEF, syslog (`securegent-siem`) |
 | `securegent/slack.py` | Approvals in Slack (post, poll reactions, update) |
+| `securegent/teams.py` | Approvals in Microsoft Teams (device-code sign-in, Graph) |
 | `securegent/approvals.py` | Human approvals shared between the proxy and the dashboard |
 | `securegent/packs/` | Bundled policy packs (`github`, `devops`, `hr`, `healthcare`, `india-finance`, `mcp-filesystem`) |
 | `attacks/` | Community attack scenarios (JSON), template and guide |
@@ -524,9 +557,9 @@ real Wazuh manager and a real Slack workspace.
 - [x] **Taint tracking:** rules that know where an argument's data came from (untrusted email/web, confidential files)
 - [x] **SIEM export:** ECS JSON and CEF, syslog, Wazuh rules, MITRE ATLAS tags (`securegent-siem`)
 - [x] **Slack approvals:** approve or deny with a reaction, no public URL needed
-- [ ] Teams approvals
+- [x] **Teams approvals:** group chat or channel via Microsoft Graph, no public URL needed
 - [x] **Persistent limits:** SQLite, safe across restarts and processes
-- [ ] Postgres for multi-machine deployments
+- [x] **Postgres** for limits shared across machines
 
 ## Contributing
 
