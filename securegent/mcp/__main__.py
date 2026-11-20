@@ -61,6 +61,9 @@ def main(argv=None) -> int:
                         "(default: calls that need approval are refused)")
     p.add_argument("--approval-timeout", type=float, default=120,
                    help="seconds to wait for a decision before denying (default: 120)")
+    p.add_argument("--tool-check", choices=["block", "warn", "off"], default="block",
+                   help="scan tool descriptions for hidden instructions and changes (rug pulls): "
+                        "block drops such tools, warn only logs them (default: block)")
     p.add_argument("--show-all-tools", action="store_true",
                    help="don't hide tools that are outside the agent's scope")
     args = p.parse_args(ours)
@@ -98,7 +101,7 @@ def main(argv=None) -> int:
     proxy = McpProxy(upstream, guard, token, args.server_name,
                      sys.stdin.buffer, sys.stdout.buffer,
                      hide_out_of_scope_tools=not args.show_all_tools,
-                     kill_switch=kill_switch)
+                     kill_switch=kill_switch, tool_check=args.tool_check)
     return proxy.run()
 
 

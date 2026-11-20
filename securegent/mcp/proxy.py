@@ -21,13 +21,21 @@ from pathlib import Path
 from typing import BinaryIO
 
 from ..guard import Blocked, Guard
+from .toolscan import ToolScanner, fingerprint
 from .upstream import HttpUpstream, StdioUpstream, _log
 
 
 class McpProxy:
     def __init__(self, upstream: "list[str] | StdioUpstream | HttpUpstream", guard: Guard, token: str,
                  server_name: str, client_in: BinaryIO, client_out: BinaryIO,
-                 hide_out_of_scope_tools: bool = True, kill_switch: str | Path | None = None):
+                 hide_out_of_scope_tools: bool = True, kill_switch: str | Path | None = None,
+                 tool_check: str = "block"):
+        if tool_check not in ("block", "warn", "off"):
+            raise ValueError("tool_check must be block, warn or off")
+        self.tool_check = tool_check
+        self.scanner = ToolScanner()
+        self._poisoned: set[str] = set()        # tools dropped for poisoning / rug pull
+        self._reported: set = set()
         # A plain command list means "start this local stdio server".
         self.upstream = StdioUpstream(upstream) if isinstance(upstream, list) else upstream
         self.guard = guard
@@ -128,6 +136,13 @@ class McpProxy:
 
         self._apply_kill_switch()
         tool = f"{self.server}.{name}"
+        if name in self._poisoned:
+            reason = "this tool's description contains hidden instructions or changed (tool poisoning)"
+            self.guard.audit.write({"agent": self._agent_id, "tool": tool, "args": args,
+                                    "decision": "deny", "reason": reason, "stage": "tool-scan"})
+            _log(f"BLOCKED {tool}: {reason}")
+            self._refuse(msg["id"], reason)
+            return
         try:
             self.guard.check(self.token, tool, args)
         except Blocked as e:
@@ -160,8 +175,7 @@ class McpProxy:
     def _handle_upstream_message(self, msg) -> None:
         if isinstance(msg, dict):
             self._observe_result(msg)
-            if self.hide_tools:
-                msg = self._filter_tool_list(msg)
+            msg = self._filter_tool_list(msg)
         try:
             self._send_client(msg)
         except (OSError, ValueError):
@@ -186,7 +200,8 @@ class McpProxy:
             _log(f"could not record result of {tool} for taint tracking: {e}")
 
     def _filter_tool_list(self, msg: dict) -> dict:
-        """Hide tools the agent's token can never use, so the model doesn't try them."""
+        """Check a tools/list reply: drop poisoned tools (tool_check="block") and hide
+        tools the agent's token can never use, so the model doesn't try them."""
         try:
             is_list_reply = msg.get("id") in self._pending_lists
         except TypeError:
@@ -197,20 +212,46 @@ class McpProxy:
         result = msg.get("result")
         if not isinstance(result, dict) or not isinstance(result.get("tools"), list):
             return msg
-        try:
-            claims = self.guard.registry.verify(self.token)
-        except Exception:
-            return msg
-        kept, hidden = [], []
-        for t in result["tools"]:
-            name = t.get("name") if isinstance(t, dict) else None
-            if name and self.guard.registry.has_scope(claims, f"{self.server}.{name}"):
-                kept.append(t)
-            else:
-                hidden.append(name)
-        if hidden:
-            _log(f"hid {len(hidden)} tool(s) outside the agent's scope: {', '.join(map(str, hidden))}")
-        return {**msg, "result": {**result, "tools": kept}}
+        tools = [t for t in result["tools"] if isinstance(t, dict)]
+        if self.tool_check != "off":
+            tools = [t for t in tools if self._tool_is_clean(t)]
+        if self.hide_tools:
+            try:
+                claims = self.guard.registry.verify(self.token)
+            except Exception:
+                claims = None                     # disabled agent: show nothing usable
+            kept, hidden = [], []
+            for t in tools:
+                name = t.get("name")
+                if claims and name and self.guard.registry.has_scope(claims, f"{self.server}.{name}"):
+                    kept.append(t)
+                else:
+                    hidden.append(name)
+            if hidden:
+                _log(f"hid {len(hidden)} tool(s) outside the agent's scope: {', '.join(map(str, hidden))}")
+            tools = kept
+        return {**msg, "result": {**result, "tools": tools}}
+
+    def _tool_is_clean(self, tool: dict) -> bool:
+        """Scan one tool definition; log findings once per definition. False = drop it."""
+        name = str(tool.get("name"))
+        if name in self._poisoned:
+            return False
+        findings = self.scanner.check(tool)
+        if not findings:
+            return True
+        block = self.tool_check == "block"
+        key = (name, fingerprint(tool))
+        if key not in self._reported:
+            self._reported.add(key)
+            reason = "tool poisoning: " + "; ".join(findings)
+            _log(f"{'BLOCKED' if block else 'WARNING'} tool {self.server}.{name}: {reason}")
+            self.guard.audit.write({"agent": self._agent_id, "tool": f"{self.server}.{name}",
+                                    "args": {}, "decision": "deny" if block else "allow",
+                                    "reason": reason, "stage": "tool-scan"})
+        if block:
+            self._poisoned.add(name)   # stays blocked for the rest of the session
+        return not block
 
 
 def _short(args: dict, limit: int = 120) -> str:

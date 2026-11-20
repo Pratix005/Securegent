@@ -14,7 +14,8 @@ The audit log is converted to one of two standard formats:
 Severity (0-10, also used for ECS event.severity):
   1 allowed   3 allowed after human approval   5 unknown tool / out of scope
   6 denied by policy or approval refused   7 auth failure or kill switch
-  8 denied because of tainted data (likely prompt injection or exfiltration)
+  8 denied because of tainted data (likely prompt injection or exfiltration), or an
+    MCP tool whose description hides instructions (tool poisoning)
 
 Taint findings are tagged with MITRE ATLAS techniques: untrusted data steering a call ->
 AML.T0051.001 (indirect prompt injection); confidential data leaving -> AML.T0057
@@ -63,12 +64,14 @@ def severity(e: dict) -> int:
     stage, allowed = _stage(e), e.get("decision") == "allow"
     if allowed:
         return 3 if e.get("approved_by_human") else 1
-    if _taint_labels(e):
+    if _taint_labels(e) or stage == "tool-scan":
         return 8
     return {"auth": 7, "tool": 5, "scope": 5}.get(stage, 6)
 
 
 def techniques(e: dict) -> list[tuple[str, str]]:
+    if _stage(e) == "tool-scan":
+        return [ATLAS["injection"]]          # instructions hidden in a tool description
     if e.get("decision") == "allow":
         return []
     labels = _taint_labels(e)

@@ -26,7 +26,9 @@ POLICY = {"sources": [{"tool": "fake.read_file", "label": "confidential"}], "rul
 ]}
 
 
-class McpProxyTests(unittest.TestCase):
+class ProxyHarness(unittest.TestCase):
+    """Starts the proxy around a fake server; tests talk to it as an MCP client."""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         tmp = Path(self.tmp.name)
@@ -76,6 +78,7 @@ class McpProxyTests(unittest.TestCase):
             return []
         return [json.loads(l)["name"] for l in self.executed.read_text(encoding="utf-8").splitlines()]
 
+class McpProxyTests(ProxyHarness):
     def test_out_of_scope_tools_are_hidden(self):
         names = [t["name"] for t in self.request("tools/list", {})["tools"]]
         self.assertEqual(names, ["read_file", "write_file"])
@@ -160,6 +163,37 @@ class McpProxyHttpTests(McpProxyTests):
         reply = json.loads(self.proc.stdout.readline())
         self.assertEqual(reply["id"], self.next_id)
         self.assertIn("HTTP 500", reply["error"]["message"])
+
+
+class PoisonedServerTests(ProxyHarness):
+    def upstream(self):
+        return ["--", sys.executable, str(FAKE_SERVER), str(self.executed), "poisoned"], {}
+
+    def test_poisoned_tool_is_hidden_and_refused(self):
+        names = [t["name"] for t in self.request("tools/list", {})["tools"]]
+        self.assertEqual(names, ["write_file"])
+        result = self.call("read_file", path="notes.txt")
+        self.assertTrue(result["isError"])
+        self.assertIn("tool poisoning", result["content"][0]["text"])
+        self.assertEqual(self.executed_calls(), [])
+        entries = [json.loads(l) for l in self.audit.read_text(encoding="utf-8").splitlines()]
+        scan = [e for e in entries if e.get("stage") == "tool-scan"]
+        self.assertIn("hidden-instruction tag", scan[0]["reason"])
+        self.assertIn("secret file access", scan[0]["reason"])
+
+
+class RugPullTests(ProxyHarness):
+    def upstream(self):
+        return ["--", sys.executable, str(FAKE_SERVER), str(self.executed), "rugpull"], {}
+
+    def test_tool_changed_after_first_list_is_blocked(self):
+        first = [t["name"] for t in self.request("tools/list", {})["tools"]]
+        self.assertEqual(first, ["read_file", "write_file"])
+        self.assertNotIn("isError", self.call("read_file", path="a"))
+        second = [t["name"] for t in self.request("tools/list", {})["tools"]]
+        self.assertEqual(second, ["write_file"])
+        self.assertTrue(self.call("read_file", path="a")["isError"])
+        self.assertEqual(self.executed_calls(), ["read_file"])
 
 
 class HttpUpstreamUnitTests(unittest.TestCase):
