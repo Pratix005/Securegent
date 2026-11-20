@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-11-21)
 
 ### New
 
@@ -20,6 +20,11 @@
 
 ### Fixed
 
+- **Security: `--upstream-url` no longer follows redirects.** urllib re-sent `--header` values,
+  such as a bearer token, to whatever host a server redirected to. Redirects now fail with a
+  clear error. Affects 0.2.0.
+- Source files contained raw invisible Unicode characters (in the tool-poisoning scanner's own
+  detection pattern); they are now written as escapes, so the code shows what it does.
 - **Audit logging now fails closed.** The tool used to run before its "allowed" entry was
   written, so a full disk or permission error meant an action ran with no record. The entry is
   now written first; if it can't be, the call is refused.

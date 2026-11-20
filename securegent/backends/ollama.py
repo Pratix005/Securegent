@@ -26,7 +26,7 @@ def _chat(model: str, messages: list, tools: list) -> dict:
     }).encode()
     req = urllib.request.Request(OLLAMA_URL, data=payload,
                                  headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=600) as resp:
+    with urllib.request.urlopen(req, timeout=600) as resp:  # nosec B310: scheme is fixed https or checked to be http(s)
         return json.loads(resp.read())["message"]
 
 

@@ -39,7 +39,7 @@ _HINTS = {
     "not_in_channel": "invite the bot: type /invite @<your app> in the channel",
     "channel_not_found": "use the channel id (starts with C), not its name, and invite the bot",
     "invalid_auth": "SLACK_BOT_TOKEN must be the Bot User OAuth Token (xoxb-...)",
-    "token_revoked": "the token was revoked; reinstall the app and use the new token",
+    "token_revoked": "the token was revoked; reinstall the app and use the new token",  # nosec B105: not a password: a variable name or message
 }
 
 
@@ -80,7 +80,7 @@ class SlackApproval:
             url += "?" + urllib.parse.urlencode(query)
         req = urllib.request.Request(url, data=data, headers=headers, method="POST" if data else "GET")
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # nosec B310: scheme is fixed https or checked to be http(s)
                 body = json.loads(resp.read())
         except (urllib.error.URLError, OSError, ValueError) as e:
             raise SlackError(f"{method}: {getattr(e, 'reason', e)}") from None

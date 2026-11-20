@@ -15,7 +15,7 @@ import json
 import os
 import re
 import shutil
-import subprocess
+import subprocess  # nosec B404: runs the MCP server command the user configured
 import sys
 import threading
 import urllib.error
@@ -23,6 +23,17 @@ import urllib.request
 from typing import Callable
 
 OnMessage = Callable[[object], None]
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never follow redirects: urllib would re-send our headers, including any
+    Authorization token, to whatever host the server redirects to."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None                      # urllib then raises HTTPError with the 3xx code
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
 
 
 def _log(msg: str) -> None:
@@ -40,7 +51,7 @@ class StdioUpstream:
 
     def start(self, on_message: OnMessage, on_raw: Callable[[bytes], None], on_closed: Callable[[], None]) -> None:
         exe = shutil.which(self.command[0]) or self.command[0]   # resolves npx -> npx.cmd on Windows
-        self.proc = subprocess.Popen([exe, *self.command[1:]], stdin=subprocess.PIPE,
+        self.proc = subprocess.Popen([exe, *self.command[1:]], stdin=subprocess.PIPE,  # nosec B603: user-configured MCP server command, list form, no shell
                                      stdout=subprocess.PIPE, bufsize=0)
 
         def loop():
@@ -133,7 +144,7 @@ class HttpUpstream:
             if self.protocol_version:
                 headers["MCP-Protocol-Version"] = self.protocol_version
         req = urllib.request.Request(self.url, data=body, headers=headers, method=method)
-        return urllib.request.urlopen(req, timeout=self.timeout)
+        return _OPENER.open(req, timeout=self.timeout)
 
     def send(self, msg) -> None:
         # One thread per POST: a slow tool call must not hold up pings or other calls.
@@ -149,6 +160,9 @@ class HttpUpstream:
             detail = e.read(300).decode("utf-8", "replace").strip()
             if e.code == 404 and self.session_id:
                 detail = "the server ended the MCP session; restart the client to reconnect"
+            elif 300 <= e.code < 400:
+                detail = (f"redirect to {e.headers.get('Location', '?')} not followed, so headers "
+                          "and tokens stay with the configured URL; use the final URL in --upstream-url")
             self._fail(ids, f"upstream HTTP {e.code}: {detail or e.reason}")
             return
         except (urllib.error.URLError, OSError, ValueError) as e:

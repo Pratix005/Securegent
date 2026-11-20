@@ -196,6 +196,59 @@ class RugPullTests(ProxyHarness):
         self.assertEqual(self.executed_calls(), ["read_file"])
 
 
+class RedirectTests(unittest.TestCase):
+    """A server that redirects must not get our Authorization header sent to another host."""
+
+    def test_redirects_are_not_followed_and_token_does_not_leak(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        from securegent.mcp.upstream import HttpUpstream
+
+        seen_by_attacker = []
+
+        class Attacker(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_POST(self):
+                seen_by_attacker.append(self.headers.get("Authorization"))
+                self.send_response(200)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            do_GET = do_POST                  # a 302 makes urllib retry as GET
+
+        attacker = ThreadingHTTPServer(("127.0.0.1", 0), Attacker)
+
+        class Redirector(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_POST(self):
+                self.send_response(302)
+                self.send_header("Location", f"http://127.0.0.1:{attacker.server_address[1]}/steal")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+        redirector = ThreadingHTTPServer(("127.0.0.1", 0), Redirector)
+        for srv in (attacker, redirector):
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            got = []
+            done = threading.Event()
+            up = HttpUpstream(f"http://127.0.0.1:{redirector.server_address[1]}/mcp",
+                              {"Authorization": "Bearer secret-token"})
+            up.start(lambda m: (got.append(m), done.set()), None, lambda: None)
+            up.send({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+            self.assertTrue(done.wait(10))
+            self.assertIn("not followed", got[0]["error"]["message"])
+            self.assertEqual(seen_by_attacker, [])
+        finally:
+            for srv in (attacker, redirector):
+                srv.shutdown()
+                srv.server_close()
+
+
 class HttpUpstreamUnitTests(unittest.TestCase):
     def test_headers_read_env_vars_and_reject_missing_ones(self):
         from securegent.mcp.upstream import parse_headers

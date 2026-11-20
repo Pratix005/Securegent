@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "securegent"
-version = "0.2.0"
+version = "0.3.0"
 description = "A firewall for AI agents: identity, permissions, approvals and audit between your agent and its tools."
 readme = "README.md"
 license = "Apache-2.0"

@@ -33,7 +33,7 @@ _PATTERNS = [
 _COMPILED = [(name, re.compile(rx, re.IGNORECASE)) for name, rx in _PATTERNS]
 
 # Characters the model sees but people reviewing the tool usually don't.
-_INVISIBLE = re.compile("[​-‏‪-‮⁠-⁤⁦-⁩﻿\U000e0000-\U000e007f]")
+_INVISIBLE = re.compile(r"[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff\U000e0000-\U000e007f]")
 
 
 def _texts(tool: dict) -> list[tuple[str, str]]:

@@ -138,7 +138,7 @@ class PostgresUsage:
             db.execute(f"CREATE TABLE IF NOT EXISTS {table} (ts DOUBLE PRECISION NOT NULL, "
                        "agent TEXT NOT NULL, rule TEXT NOT NULL, value DOUBLE PRECISION NOT NULL)")
             db.execute(f"CREATE INDEX IF NOT EXISTS {table}_lookup ON {table} (agent, rule, ts)")
-            db.execute(f"DELETE FROM {table} WHERE ts < EXTRACT(EPOCH FROM clock_timestamp()) - %s",
+            db.execute(f"DELETE FROM {table} WHERE ts < EXTRACT(EPOCH FROM clock_timestamp()) - %s",  # nosec B608: table name validated as [A-Za-z0-9_]; values are parameters
                        (KEEP_SECONDS,))
 
     def _connect(self):
@@ -155,21 +155,21 @@ class PostgresUsage:
         with db.transaction():
             db.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (f"{agent}\x1f{rule}",))
             now, used = db.execute(
-                f"SELECT EXTRACT(EPOCH FROM clock_timestamp())::float8, COALESCE(SUM(value), 0)::float8 "
+                f"SELECT EXTRACT(EPOCH FROM clock_timestamp())::float8, COALESCE(SUM(value), 0)::float8 "  # nosec B608: table name validated as [A-Za-z0-9_]; values are parameters
                 f"FROM {self.table} WHERE agent=%s AND rule=%s "
                 f"AND ts >= EXTRACT(EPOCH FROM clock_timestamp()) - %s",
                 (agent, rule, window)).fetchone()
             total = used + value
             ok = total <= maximum and math.isfinite(value)
             if ok:
-                db.execute(f"INSERT INTO {self.table} VALUES (%s, %s, %s, %s)", (now, agent, rule, value))
+                db.execute(f"INSERT INTO {self.table} VALUES (%s, %s, %s, %s)", (now, agent, rule, value))  # nosec B608: table name validated as [A-Za-z0-9_]; values are parameters
         return ok, total
 
     def add(self, agent: str, rule: str, value: float) -> None:
         if not math.isfinite(value):
             return
         self._connect().execute(
-            f"INSERT INTO {self.table} VALUES (EXTRACT(EPOCH FROM clock_timestamp()), %s, %s, %s)",
+            f"INSERT INTO {self.table} VALUES (EXTRACT(EPOCH FROM clock_timestamp()), %s, %s, %s)",  # nosec B608: table name validated as [A-Za-z0-9_]; values are parameters
             (agent, rule, value))
 
     def close(self) -> None:
@@ -177,7 +177,7 @@ class PostgresUsage:
             for db in self._all:
                 try:
                     db.close()
-                except Exception:
+                except Exception:  # nosec B110: cleanup must never break an approval or shutdown
                     pass
             self._all.clear()
         self._local = threading.local()

@@ -106,7 +106,7 @@ def _finish(item, approved: bool, where: str) -> None:
     ch, handle, _ = item
     try:
         ch.finish(handle, approved, where)
-    except Exception:
+    except Exception:  # nosec B110: cleanup must never break an approval or shutdown
         pass
 
 

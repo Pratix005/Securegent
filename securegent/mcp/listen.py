@@ -31,7 +31,7 @@ from .upstream import _log
 
 MAX_BODY = 10 * 1024 * 1024
 REPLY_TIMEOUT = 900            # seconds a POST waits for its replies (approvals can be slow)
-TOKEN_ENV = "SECUREGENT_LISTEN_TOKEN"
+TOKEN_ENV = "SECUREGENT_LISTEN_TOKEN"  # nosec B105: not a password: a variable name or message
 
 
 def _key(request_id) -> str:

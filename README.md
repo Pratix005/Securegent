@@ -69,7 +69,7 @@ securegent-dashboard --open                        # the dashboard above
 | Same vs `pack:india-finance` | 16/16 stopped, normal work still allowed | `securegent-redteam --policy pack:india-finance --scenarios attacks/` |
 | Same with no guard (baseline) | 0/16 stopped | `securegent-redteam --no-guard --scenarios attacks/` |
 | Known bypasses vs `policies.json` | **2 get through** (documented below) | `securegent-redteam --scenarios attacks/known-bypasses` |
-| Unit and integration tests | 159 pass (4 Postgres tests need a database) | `python -m unittest discover tests` |
+| Unit and integration tests | 160 pass (4 Postgres tests need a database) | `python -m unittest discover tests` |
 | Guard overhead per call | ~0.9 ms median, ~1.4 ms p99 (mostly the audit write) | `python scripts/benchmark.py` |
 
 The JSON reports from these runs are in [`docs/results/`](docs/results/). Policy-mode

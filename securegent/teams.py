@@ -64,7 +64,7 @@ def _request(url: str, data: dict | None = None, token: str | None = None, form:
             headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=body, headers=headers, method=method or ("POST" if body else "GET"))
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310: scheme is fixed https or checked to be http(s)
             raw = resp.read()
             return json.loads(raw) if raw.strip() else {}
     except urllib.error.HTTPError as e:
