@@ -167,6 +167,18 @@ class HealthcarePackTests(PackHarness):
         self.assertEqual(self.do("sms.send", to="+919800000000", body="ABHA 12-3456-7890-1234"), "deny")
 
 
+class StateDirectoryTests(unittest.TestCase):
+    """Agents must not reach Securegent's own approvals, kill switch or audit log."""
+
+    def test_filesystem_pack_blocks_the_state_directory(self):
+        p = Policy.from_file("pack:mcp-filesystem")
+        for tool, args in [("filesystem.write_file", {"path": "C:/Users/a/.securegent/approvals/decided/x.json", "content": "{}"}),
+                           ("filesystem.move_file", {"source": "/home/a/.securegent/KILL_SWITCH", "destination": "/tmp/k"}),
+                           ("filesystem.read_text_file", {"path": r"C:\Users\a\.securegent\audit.jsonl"})]:
+            self.assertEqual(p.evaluate("x", tool, args).rule, "no-securegent-state", args)
+        self.assertEqual(p.evaluate("x", "filesystem.write_file",
+                                    {"path": "C:/work/drafts/a.md", "content": "x"}).effect, "allow")
+
 class AnyArgumentConditionTests(unittest.TestCase):
     def test_star_means_any_argument(self):
         p = Policy([{"id": "x", "tool": "t", "when": [{"arg": "*", "op": "contains", "value": "bad"}], "effect": "deny"},

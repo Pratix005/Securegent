@@ -2,6 +2,13 @@
   "description": "Policy for the official MCP filesystem server (@modelcontextprotocol/server-filesystem), run with --server-name filesystem. Reading is allowed except secrets; writing only inside a 'drafts' folder; moving files needs approval; anything else is denied.",
   "rules": [
     {
+      "id": "no-securegent-state",
+      "tool": "filesystem.*",
+      "when": [{ "arg": "*", "op": "matches", "value": "(?s).*[\\\\/]\\.securegent([\\\\/].*)?" }],
+      "effect": "deny",
+      "reason": "Securegent's own state (approvals, kill switch, audit log) is off limits to agents"
+    },
+    {
       "id": "no-secret-paths",
       "tool": "filesystem.*",
       "when": [{ "arg": "path", "op": "matches",

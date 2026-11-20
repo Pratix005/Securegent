@@ -4,6 +4,10 @@
 
 ### New
 
+- `docs/design.md`: architecture, request flow, token format, policy semantics, concurrency,
+  taint mechanism, failure behaviour, threat model, known bypasses, measurements, roadmap.
+- `attacks/known-bypasses/`: two reproducible attacks that currently get through, with a test
+  asserting they still do. `docs/results/`: saved red-team reports. `scripts/benchmark.py`.
 - **Microsoft Teams approvals** (`--teams-target`, `--teams-approvers`, `securegent-teams login`):
   approve with a reaction in a group chat or channel, via Microsoft Graph, no public URL.
 - **PostgreSQL store** for running limits shared across machines (`securegent[postgres]`,
@@ -16,6 +20,11 @@
 
 ### Fixed
 
+- **Audit logging now fails closed.** The tool used to run before its "allowed" entry was
+  written, so a full disk or permission error meant an action ran with no record. The entry is
+  now written first; if it can't be, the call is refused.
+- `pack:mcp-filesystem` denies paths inside `~/.securegent`, where approvals and the kill switch
+  live, so an agent can't approve its own requests by writing files.
 - Postgres: proxies starting at the same moment crashed on table setup (found by testing
   8 processes against a real database).
 - Taint tracking missed API keys copied inside other text (`key=sk_live_...`) and phrases

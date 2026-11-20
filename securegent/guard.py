@@ -1,6 +1,7 @@
 """The Guard: the checkpoint every agent tool call must pass through."""
 
 import json
+import sys
 import threading
 import time
 import uuid
@@ -79,8 +80,9 @@ class Guard:
             self._log({"tool": tool, "args": args}, DENY, "unknown tool", "tool")
             raise Blocked(f"unknown tool '{tool}'")
         entry, decision, claims = self._authorize(token, tool, args)
-        result = self._tools[tool](**args)
+        # Log first, run second: if the allow can't be recorded, the tool never runs.
         self._record(entry, decision, claims, args)
+        result = self._tools[tool](**args)
         self._remember(claims, tool, args, result)
         return result
 
@@ -158,8 +160,10 @@ class Guard:
         return entry, decision, claims
 
     def _record(self, entry: dict, decision: Decision, claims: dict, args: dict) -> None:
-        """Write the ALLOW to the audit log (limit usage was reserved in _authorize)."""
-        self._log(entry, ALLOW, decision.reason, "approval" if entry.get("approved_by_human") else "policy")
+        """Write the ALLOW to the audit log (limit usage was reserved in _authorize).
+        Fails closed: an allow that can't be logged is refused."""
+        self._log(entry, ALLOW, decision.reason, "approval" if entry.get("approved_by_human") else "policy",
+                  must_record=True)
 
     @staticmethod
     def _limit_value(limit: dict, args: dict) -> float:
@@ -174,6 +178,16 @@ class Guard:
         # A negative (or NaN) amount would shrink the running total and make room for more.
         return value if value >= 0 else float("inf")
 
-    def _log(self, entry: dict, effect: str, reason: str, stage: str) -> None:
-        """stage = the check that decided: tool, auth, scope, policy or approval."""
-        self.audit.write({**entry, "decision": effect, "reason": reason, "stage": stage})
+    def _log(self, entry: dict, effect: str, reason: str, stage: str, must_record: bool = False) -> None:
+        """stage = the check that decided: tool, auth, scope, policy or approval.
+
+        If the audit log can't be written: an allow (must_record) is turned into a refusal,
+        so nothing runs unrecorded; a deny still denies, with a warning on stderr."""
+        try:
+            self.audit.write({**entry, "decision": effect, "reason": reason, "stage": stage})
+        except (OSError, ValueError, TypeError) as e:
+            if must_record:
+                raise Blocked(f"audit log unavailable ({type(e).__name__}: {e}); "
+                              "refusing to run a call that can't be recorded") from None
+            print(f"[securegent] WARNING: could not write the audit log ({e}); "
+                  f"the call was still {effect}ed", file=sys.stderr, flush=True)

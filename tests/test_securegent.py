@@ -154,5 +154,36 @@ class RedTeamTests(unittest.TestCase):
         self.assertTrue(all(r.outcome == COMPROMISED for r in results))
 
 
+class AuditFailureTests(unittest.TestCase):
+    """If the audit log can't be written, nothing may run unrecorded."""
+
+    class BrokenLog(AuditLog):
+        def write(self, entry):
+            raise OSError("disk full")
+
+    def setUp(self):
+        self.reg = AgentRegistry(secret=b"k")
+        self.reg.register("bot", owner="alice", allowed_scopes=["pay"])
+        self.ran = []
+        self.guard = Guard(self.reg, Policy(RULES), self.BrokenLog(Path(tempfile.gettempdir()) / "unused.jsonl"))
+        self.guard.tool("pay")(lambda amount: self.ran.append(amount) or "paid")
+        self.token = self.reg.issue_token("bot", ["pay"])
+
+    def test_allowed_call_is_refused_and_never_runs(self):
+        with self.assertRaises(Blocked) as ctx:
+            self.guard.call(self.token, "pay", amount=50)
+        self.assertIn("audit log unavailable", str(ctx.exception))
+        self.assertEqual(self.ran, [])
+
+    def test_denied_call_still_denied(self):
+        with self.assertRaises(Blocked):
+            self.guard.call(self.token, "pay", amount=500)     # needs approval, approver refuses
+        self.assertEqual(self.ran, [])
+
+    def test_proxy_style_check_fails_closed_too(self):
+        with self.assertRaises(Blocked):
+            self.guard.check(self.token, "pay", {"amount": 50})
+
+
 if __name__ == "__main__":
     unittest.main()

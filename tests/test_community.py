@@ -27,6 +27,16 @@ class CommunityScenarioTests(unittest.TestCase):
                 self.assertEqual(run_policy(s, None).outcome, COMPROMISED, "must work without a guard")
                 self.assertIn(run_policy(s, policy).outcome, (BLOCKED, RESISTED), "policies.json must stop it")
 
+    def test_known_bypasses_still_get_through(self):
+        """Documented limitations (docs/design.md#known-bypasses). If one starts failing here,
+        it has been fixed: move it to attacks/ and update the docs."""
+        policy = Policy.from_file(ROOT / "policies.json")
+        bypasses = load_scenarios(ATTACKS / "known-bypasses")
+        self.assertEqual(len(bypasses), 2)
+        for s in bypasses:
+            with self.subTest(s.id):
+                self.assertEqual(run_policy(s, policy).outcome, COMPROMISED)
+
     def test_template_is_valid_and_skipped_in_folders(self):
         data = json.loads((ATTACKS / "TEMPLATE.json").read_text(encoding="utf-8"))
         scenario_from_dict(data)
