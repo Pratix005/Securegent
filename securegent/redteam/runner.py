@@ -142,7 +142,7 @@ def run_policy(scenario: Scenario, policy: Policy | None, agent_id: str = DEFAUL
     with tempfile.TemporaryDirectory() as tmp:
         log = Path(tmp) / "audit.jsonl"
         guard, token = _setup(scenario, policy, log, agent_id)
-        for tool, args in scenario.attack_calls:
+        for tool, args in scenario.reads_first + scenario.attack_calls:
             try:
                 guard.call(token, tool, **args)
             except Blocked:

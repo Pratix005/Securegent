@@ -45,6 +45,7 @@ class McpProxy:
         self._write_lock = threading.Lock()
         self._upstream_lock = threading.Lock()
         self._pending_lists: set = set()        # ids of tools/list requests in flight
+        self._pending_calls: dict = {}          # id -> (tool, args) of allowed calls in flight
         self._done = threading.Event()
         self.proc: subprocess.Popen | None = None
 
@@ -151,6 +152,10 @@ class McpProxy:
             self._refuse(msg["id"], str(e))
             return
         _log(f"allowed {tool} {_short(args)}")
+        try:
+            self._pending_calls[msg["id"]] = (tool, args)   # so taint tracking sees the result
+        except TypeError:
+            pass
         self._send_upstream(msg)
 
     def _refuse(self, request_id, reason: str) -> None:
@@ -182,6 +187,8 @@ class McpProxy:
                         self.client_out.write(line + b"\n")
                         self.client_out.flush()
                     continue
+                if isinstance(msg, dict):
+                    self._observe_result(msg)
                 if isinstance(msg, dict) and self.hide_tools:
                     msg = self._filter_tool_list(msg)
                 self._send_client(msg)
@@ -189,6 +196,24 @@ class McpProxy:
             pass
         finally:
             self._done.set()
+
+    def _observe_result(self, msg: dict) -> None:
+        """Pass a tool result to the guard before the client (and model) sees it."""
+        try:
+            pending = self._pending_calls.pop(msg.get("id"), None)
+        except TypeError:
+            return
+        if pending is None or not isinstance(msg.get("result"), dict):
+            return
+        tool, args = pending
+        result = msg["result"]
+        parts = [c.get("text", "") for c in result.get("content", []) if isinstance(c, dict)]
+        if result.get("structuredContent") is not None:
+            parts.append(json.dumps(result["structuredContent"], default=str))
+        try:
+            self.guard.observe(self.token, tool, args, "\n".join(parts))
+        except Exception as e:                 # never break the stream over bookkeeping
+            _log(f"could not record result of {tool} for taint tracking: {e}")
 
     def _filter_tool_list(self, msg: dict) -> dict:
         """Hide tools the agent's token can never use, so the model doesn't try them."""

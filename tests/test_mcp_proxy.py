@@ -10,7 +10,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 FAKE_SERVER = Path(__file__).resolve().parent / "fake_mcp_server.py"
 
-POLICY = {"rules": [
+POLICY = {"sources": [{"tool": "fake.read_file", "label": "confidential"}], "rules": [
+    {"id": "no-leak", "tool": "fake.write_file",
+     "when": [{"arg": "content", "op": "tainted", "value": "confidential"}], "effect": "deny",
+     "reason": "copies data read from a file"},
     {"id": "no-secrets", "tool": "fake.*",
      "when": [{"arg": "path", "op": "contains", "value": ".env"}], "effect": "deny", "reason": "secret file"},
     {"id": "read", "tool": "fake.read_file", "effect": "allow", "reason": "reading is fine"},
@@ -89,6 +92,12 @@ class McpProxyTests(unittest.TestCase):
         self.call("write_file", path="b")
         self.assertTrue(self.call("write_file", path="c")["isError"])
         self.assertEqual(self.executed_calls(), ["write_file", "write_file"])
+
+    def test_taint_from_upstream_results(self):
+        self.call("write_file", path="a", content="executed read_file")   # nothing read yet: fine
+        self.call("read_file", path="notes.txt")         # fake server answers "executed read_file"
+        self.assertTrue(self.call("write_file", path="b", content="executed read_file")["isError"])
+        self.assertEqual(self.executed_calls(), ["write_file", "read_file"])
 
     def test_kill_switch_file(self):
         self.kill.write_text("stop")

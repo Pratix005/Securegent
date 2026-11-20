@@ -5,4 +5,4 @@ from .identity import AgentRegistry, AuthError
 from .policy import Policy
 
 __all__ = ["AgentRegistry", "AuthError", "AuditLog", "Blocked", "Guard", "Policy"]
-__version__ = "0.1.0"
+__version__ = "0.2.0"

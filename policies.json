@@ -1,5 +1,27 @@
 {
+  "sources": [
+    { "tool": "email.read", "label": "untrusted" },
+    { "tool": "web.fetch", "label": "untrusted" },
+    { "tool": "files.read", "label": "confidential",
+      "when": [{ "arg": "path", "op": "matches", "value": "(customers.*|hr/.*|.*secret.*)" }] }
+  ],
   "rules": [
+    {
+      "id": "no-confidential-to-web",
+      "agent": "*",
+      "tool": "web.fetch",
+      "when": [{ "arg": "url", "op": "tainted", "value": "confidential" }],
+      "effect": "deny",
+      "reason": "the URL carries confidential data the agent read earlier (taint)"
+    },
+    {
+      "id": "web-url-from-content",
+      "agent": "*",
+      "tool": "web.fetch",
+      "when": [{ "arg": "url", "op": "tainted", "value": "untrusted" }],
+      "effect": "approve",
+      "reason": "this URL came from an email or web page, not from you (taint)"
+    },
     {
       "id": "read-inbox",
       "agent": "*",
@@ -22,6 +44,14 @@
       "when": [{ "arg": "attachment", "op": "not_equals", "value": null }],
       "effect": "deny",
       "reason": "agents may not send attachments outside the company"
+    },
+    {
+      "id": "email-external-confidential",
+      "agent": "finance-assistant",
+      "tool": "email.send",
+      "when": [{ "arg": "body", "op": "tainted", "value": "confidential" }],
+      "effect": "deny",
+      "reason": "the email body carries confidential data the agent read earlier (taint)"
     },
     {
       "id": "email-external",

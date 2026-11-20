@@ -8,6 +8,7 @@ from typing import Callable
 
 from .identity import AgentRegistry, AuthError
 from .policy import ALLOW, APPROVE, DENY, Decision, Policy
+from .taint import TaintTracker, TaintView
 
 
 class Blocked(Exception):
@@ -60,6 +61,7 @@ class Guard:
         self._tools: dict[str, Callable] = {}
         self._usage: list[tuple[float, str, str, float]] = []   # (time, agent, rule, value)
         self._usage_lock = threading.Lock()   # calls may be checked from several threads
+        self.taint = TaintTracker()           # where data came from, per token (session)
 
     def tool(self, name: str):
         """Decorator to register a function as a guarded tool."""
@@ -76,7 +78,21 @@ class Guard:
         entry, decision, claims = self._authorize(token, tool, args)
         result = self._tools[tool](**args)
         self._record(entry, decision, claims, args)
+        self._remember(claims, tool, args, result)
         return result
+
+    def observe(self, token: str, tool: str, args: dict, result) -> None:
+        """Tell the guard what an allowed call returned (for proxies, which run the tool
+        elsewhere). Output of tools the policy lists as sources is remembered for taint."""
+        try:
+            claims = self.registry.verify(token)
+        except AuthError:
+            return
+        self._remember(claims, tool, args, result)
+
+    def _remember(self, claims: dict, tool: str, args: dict, result) -> None:
+        for label in self.policy.source_labels(claims["sub"], tool, args):
+            self.taint.record(claims["jti"], label, tool, result)
 
     def check(self, token: str, tool: str, args: dict) -> None:
         """Check the call without running anything (for proxies that forward the call
@@ -101,9 +117,14 @@ class Guard:
             self._log(entry, DENY, reason)
             raise Blocked(reason)
 
-        # 3. Is this specific action allowed? (policy)
-        decision = self.policy.evaluate(claims["sub"], tool, args)
+        # 3. Is this specific action allowed? (policy, including where the data came from)
+        # The human's own words (the task in the token) are trusted, never tainted.
+        self.taint.trust(claims["jti"], claims.get("task"), claims.get("on_behalf_of"), claims.get("owner"))
+        view = TaintView(self.taint, claims["jti"], args)
+        decision = self.policy.evaluate(claims["sub"], tool, args, taint=view)
         entry["rule"] = decision.rule
+        if view.evidence:
+            entry["taint"] = view.evidence
 
         # 3b. Running totals: stops "10 payments of 95,000" style splitting.
         # Checking and reserving happen under one lock, so two calls arriving at the

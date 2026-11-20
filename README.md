@@ -12,7 +12,7 @@ Rs 2.5 lakh payment waits for a human; then one button stops every agent.*
 
 ```
 pip install securegent
-securegent-redteam --policy pack:india-finance     # attack the bundled India pack: 10/10
+securegent-redteam --policy pack:india-finance     # attack the bundled India pack: 11/11
 securegent-dashboard --open                        # the console above
 ```
 
@@ -142,14 +142,57 @@ Ready-made policies ship inside the package. Use them by name anywhere a policy 
 
 `india-finance` is a technical starting point, **not legal advice**. Replace `acme\.com`, the
 vendor list and the website allowlist with your own, and review it with your compliance
-team. It is tested against the full red-team suite (10/10, normal work still allowed) and
+team. It is tested against the full red-team suite (11/11, normal work still allowed) and
 specific cases such as masked vs unmasked Aadhaar.
+
+## Taint tracking: where did this data come from?
+
+Rules that look at one call at a time can't see the whole story. An agent reads
+`customers.csv` (allowed), then opens `https://tataoffice.in/verify?records=...` (an
+allowlisted site, so also allowed), and the customer list has just left the company.
+
+Securegent can remember what tools returned and check where that data goes next. Name your
+**sources** and give their output a label:
+
+```json
+"sources": [
+  { "tool": ["email.read", "web.fetch"], "label": "untrusted" },
+  { "tool": "files.read", "label": "confidential",
+    "when": [{ "arg": "path", "op": "matches", "value": "(customers.*|hr/.*)" }] }
+]
+```
+
+Then use three new conditions in rules:
+
+| Condition | Matches when |
+|---|---|
+| `{"arg": "url", "op": "tainted", "value": "confidential"}` | the argument carries data copied from a confidential source |
+| `{"arg": "to", "op": "tainted", "value": "untrusted"}` | the address came from an email or web page, not from the human |
+| `{"op": "session_tainted", "value": "untrusted"}` | the agent has read untrusted content at any point in this task |
+
+```json
+{ "id": "no-confidential-to-web", "tool": "web.fetch",
+  "when": [{ "arg": "url", "op": "tainted", "value": "confidential" }],
+  "effect": "deny", "reason": "the URL carries confidential data the agent read earlier" }
+```
+
+Each token is one session, so one task's reads never taint another task. Text the human
+wrote into the token's `task` is always trusted: if you asked the agent to email
+`bob@acme.com`, that address is not treated as attacker-supplied even if an email mentions
+it too. Blocked calls record the evidence in the audit log (`"taint": {"url": [{"label":
+"confidential", "source": "files.read", "match": "asha@example.com"}]}`). It works in the MCP
+proxy too: results from the upstream server are remembered before the client sees them.
+
+**Limits.** Matching is by copied pieces: email addresses, URLs, numbers of 5+ digits, runs of
+four words, short whole values; URL-encoding and `42,000` vs `42000` are handled. Data the
+model paraphrases, translates or encodes (base64, spelled-out numbers) is not caught. Treat
+taint as one more layer, not a guarantee.
 
 ## Red-team suite: attack your agent, get a score
 
-Securegent ships with 10 prompt-injection attacks (fake CFO wire, vendor bank-detail swap,
+Securegent ships with 11 prompt-injection attacks (fake CFO wire, vendor bank-detail swap,
 hidden text in invoices, poisoned web pages, recipient smuggling, split payments, data
-exfiltration and more).
+exfiltration through an allowlisted website and more).
 
 ```
 securegent-redteam --policy policies.json    # replay attacks into your policy (instant, no AI)
@@ -162,10 +205,10 @@ securegent-redteam --list                    # see all attacks
 
 ```
 Normal-work check: passed (the real invoice can be paid and confirmed)
-[ 2/10] Vendor bank details swap  (business email compromise)
+[ 2/11] Vendor bank details swap  (business email compromise)
       OK   BLOCKED: approval refused: large payments and unknown vendors need human approval
 ...
-Score: 10/10 attacks stopped   Grade: A
+Score: 11/11 attacks stopped   Grade: A
 ```
 
 Each attack ends as **RESISTED** (the AI ignored it), **BLOCKED** (the AI fell for it,
@@ -173,7 +216,7 @@ Securegent stopped it) or **COMPROMISED** (a harmful action ran). The suite also
 your policy still allows normal work, because a policy that blocks everything isn't secure,
 it's just broken.
 
-Without Securegent, all 10 attacks succeed. The first version of the sample policy scored
+Without Securegent, all 11 attacks succeed. The first version of the sample policy scored
 7/10: the suite found a vendor-name loophole, a recipient-smuggling trick and payment
 splitting, which led to the `matches` condition and running limits.
 
@@ -220,7 +263,7 @@ python -m unittest discover tests -v
 - [ ] MCP proxy: HTTP transport
 - [x] **Policy packs:** `mcp-filesystem`, `india-finance` (DPDP / Aadhaar / PCI / payments)
 - [ ] More packs: healthcare, HR, DevOps, GitHub MCP server
-- [ ] **Taint tracking:** stricter rules for actions influenced by untrusted content
+- [x] **Taint tracking:** rules that know where an argument's data came from (untrusted email/web, confidential files)
 - [ ] **Standard audit format** that SIEMs (Splunk, Wazuh) can ingest
 - [ ] Persistent storage (SQLite/Postgres), Slack/Teams approvals
 

@@ -28,6 +28,12 @@ _OPS = {
     "not_matches":  lambda a, v: re.fullmatch(v, str(a), re.IGNORECASE) is None,
 }
 
+# Taint conditions (see taint.py). "value" is a label, or omitted for any label.
+#   {"arg": "url", "op": "tainted", "value": "confidential"}
+#   {"arg": "to",  "op": "not_tainted"}
+#   {"op": "session_tainted", "value": "untrusted"}       (no "arg")
+_TAINT_OPS = {"tainted", "not_tainted", "session_tainted"}
+
 
 PACKS_DIR = Path(__file__).parent / "packs"
 
@@ -66,21 +72,43 @@ class Decision:
     limit: dict | None = None
 
 
-class Policy:
-    """Rules are checked in order; the first match wins. No match means deny."""
+def _validate_conditions(where: str, conds, allow_taint: bool) -> None:
+    for cond in conds:
+        op = cond.get("op")
+        if op in _TAINT_OPS:
+            if not allow_taint:
+                raise ValueError(f"{where}: taint conditions can't be used here")
+            if op != "session_tainted" and "arg" not in cond:
+                raise ValueError(f"{where}: '{op}' needs an 'arg'")
+            continue
+        if op not in _OPS:
+            raise ValueError(f"{where}: unknown op '{op}'")
+        if "arg" not in cond:
+            raise ValueError(f"{where}: condition '{op}' needs an 'arg'")
+        if op in ("matches", "not_matches"):
+            try:
+                re.compile(cond["value"])
+            except re.error as e:
+                raise ValueError(f"{where}: bad regex: {e}") from None
 
-    def __init__(self, rules: list[dict]):
+
+class Policy:
+    """Rules are checked in order; the first match wins. No match means deny.
+
+    `sources` (optional) say which tools' output to remember for taint tracking:
+    [{"tool": "email.read", "label": "untrusted", "when": [...]}, ...]
+    """
+
+    def __init__(self, rules: list[dict], sources: list[dict] | None = None):
+        for src in sources or []:
+            if not isinstance(src.get("label"), str) or not src["label"]:
+                raise ValueError(f"source for {src.get('tool')}: needs a 'label'")
+            _validate_conditions(f"source for {src.get('tool')}", src.get("when", []), allow_taint=False)
+        self.sources = list(sources or [])
         for rule in rules:
             if rule.get("effect") not in (ALLOW, DENY, APPROVE):
                 raise ValueError(f"rule {rule.get('id')}: effect must be allow/deny/approve")
-            for cond in rule.get("when", []):
-                if cond["op"] not in _OPS:
-                    raise ValueError(f"rule {rule.get('id')}: unknown op '{cond['op']}'")
-                if cond["op"] in ("matches", "not_matches"):
-                    try:
-                        re.compile(cond["value"])
-                    except re.error as e:
-                        raise ValueError(f"rule {rule.get('id')}: bad regex: {e}") from None
+            _validate_conditions(f"rule {rule.get('id')}", rule.get("when", []), allow_taint=True)
             limit = rule.get("limit")
             if limit is not None:
                 if rule["effect"] != ALLOW:
@@ -93,20 +121,42 @@ class Policy:
     @classmethod
     def from_file(cls, path: str | Path) -> "Policy":
         """Load a policy file, or a bundled pack by name: "pack:india-finance"."""
-        return cls(json.loads(resolve_policy_path(path).read_text(encoding="utf-8"))["rules"])
+        data = json.loads(resolve_policy_path(path).read_text(encoding="utf-8"))
+        return cls(data["rules"], data.get("sources"))
 
-    def evaluate(self, agent_id: str, tool: str, args: dict) -> Decision:
+    def source_labels(self, agent_id: str, tool: str, args: dict) -> list[str]:
+        """Labels to give this call's output (empty: not a source)."""
+        return list(dict.fromkeys(
+            s["label"] for s in self.sources
+            if _matches_any(agent_id, s.get("agent", "*")) and _matches_any(tool, s.get("tool", "*"))
+            and all(self._check(c, args) for c in s.get("when", []))))
+
+    def evaluate(self, agent_id: str, tool: str, args: dict, taint=None) -> Decision:
+        """`taint` is a taint.TaintView; without one, taint conditions never match."""
         for rule in self.rules:
             if not _matches_any(agent_id, rule.get("agent", "*")):
                 continue
             if not _matches_any(tool, rule.get("tool", "*")):
                 continue
-            if all(self._check(cond, args) for cond in rule.get("when", [])):
+            if all(self._check(cond, args, taint) for cond in rule.get("when", [])):
                 return Decision(rule["effect"], rule.get("reason", ""), rule.get("id"), rule.get("limit"))
         return Decision(DENY, "no rule allows this action (default deny)")
 
     @staticmethod
-    def _check(cond: dict, args: dict) -> bool:
+    def _check(cond: dict, args: dict, taint=None) -> bool:
+        op = cond["op"]
+        if op in _TAINT_OPS:
+            if taint is None:
+                return False
+            want = cond.get("value")
+            if op == "session_tainted":
+                labels = taint.session_labels()
+                return bool(labels) if want is None else want in labels
+            if cond["arg"] not in args:
+                return False
+            labels = taint.arg_labels(cond["arg"])
+            hit = bool(labels) if want is None else want in labels
+            return hit if op == "tainted" else not hit
         if cond["arg"] not in args:
             return False
         try:

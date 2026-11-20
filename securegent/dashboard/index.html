@@ -147,6 +147,7 @@
   .args { display: block; font: 12px var(--mono); color: var(--low); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .why { color: var(--mid); overflow-wrap: anywhere; }
   .row.s .why { color: var(--stop-ink); }
+  .tnt { display: block; font-size: 12px; color: var(--mid); }
   .ok-by { display: block; font-size: 12px; color: var(--ink); font-weight: 500; }
   .more { grid-column: 3 / -1; margin: 6px 0 2px; padding: 10px 12px; background: var(--paper); border: 1px solid var(--line);
           font: 12.5px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; cursor: text; }
@@ -429,10 +430,14 @@ function log(events) {
     const what = el("div"); what.append(el("span", "tool", e.tool || "?"), el("span", "args", argText(e.args)));
     const why = el("div", "why", e.reason || "");
     if (e.approved_by_human) why.append(el("span", "ok-by", "approved by you"));
+    if (e.taint) {
+      const t = Object.entries(e.taint).map(([arg, ev]) => `${arg} ← ${ev[0].source} (${ev[0].label})`);
+      why.append(el("span", "tnt", "data from: " + t.join(", ")));
+    }
     row.append(el("span", "tm", hms(e.ts)), mk, what, why);
     if (open.has(k)) {
       const pre = el("pre", "more", JSON.stringify({ agent: e.agent, on_behalf_of: e.on_behalf_of, task: e.task,
-                                                     rule: e.rule, arguments: e.args }, null, 2));
+                                                     rule: e.rule, arguments: e.args, taint: e.taint }, null, 2));
       pre.onclick = ev => ev.stopPropagation();
       row.append(pre);
     }
