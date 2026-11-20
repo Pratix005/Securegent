@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 import tempfile
@@ -81,3 +82,60 @@ class StoreTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+PG_DSN = os.environ.get("SECUREGENT_TEST_POSTGRES")
+PG_WORKER = r"""
+import sys
+sys.path.insert(0, sys.argv[2])
+from securegent.store import PostgresUsage
+store = PostgresUsage(sys.argv[1], table="sg_test_usage")
+print(sum(store.reserve("bot", "r", 1, 3600, 30)[0] for _ in range(20)))
+"""
+
+
+@unittest.skipUnless(PG_DSN, "set SECUREGENT_TEST_POSTGRES=postgresql://... to run")
+class PostgresStoreTests(unittest.TestCase):
+    def setUp(self):
+        from securegent.store import PostgresUsage
+        self.make = lambda: PostgresUsage(PG_DSN, table="sg_test_usage")
+        self.stores = [self.make()]
+        self.stores[0]._connect().execute("TRUNCATE sg_test_usage")
+        self.tmp = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        for s in self.stores:
+            s.close()
+        self.tmp.cleanup()
+
+    def guard(self, usage):
+        reg = AgentRegistry(secret=b"k")
+        reg.register("bot", owner="alice", allowed_scopes=["pay"])
+        g = Guard(reg, Policy(RULES), AuditLog(Path(self.tmp.name) / "audit.jsonl"), usage=usage)
+        g.tool("pay")(lambda amount: "paid")
+        return g, reg.issue_token("bot", ["pay"])
+
+    def test_limits_survive_a_restart(self):
+        g, t = self.guard(self.stores[0])
+        g.call(t, "pay", amount=80)
+        self.stores.append(self.make())
+        g2, t2 = self.guard(self.stores[-1])
+        with self.assertRaises(Blocked):
+            g2.call(t2, "pay", amount=30)
+        self.assertEqual(g2.call(t2, "pay", amount=20), "paid")
+
+    def test_bad_amounts_and_human_approved_use(self):
+        s = self.stores[0]
+        self.assertFalse(s.reserve("bot", "r", float("inf"), 3600, 100)[0])
+        s.add("bot", "r", 90)                      # approved over the limit, still counts
+        self.assertEqual(s.reserve("bot", "r", 20, 3600, 100), (False, 110.0))
+
+    def test_processes_share_one_limit_atomically(self):
+        procs = [subprocess.Popen([sys.executable, "-c", PG_WORKER, PG_DSN, str(ROOT)],
+                                  stdout=subprocess.PIPE, text=True) for _ in range(4)]
+        self.assertEqual(sum(int(p.communicate(timeout=120)[0]) for p in procs), 30)
+
+    def test_bad_table_name_rejected(self):
+        from securegent.store import PostgresUsage
+        with self.assertRaises(ValueError):
+            PostgresUsage(PG_DSN, table="x; DROP TABLE y")
