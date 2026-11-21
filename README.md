@@ -477,6 +477,11 @@ advice**: review them with your compliance team, and replace the example domains
 `india-finance` is tested against the full red-team suite (14/14, normal work still allowed) and
 specific cases such as masked vs unmasked Aadhaar.
 
+The packs block personal data in tool calls. To scrub it from your own logs, prompts or
+datasets as well, the companion library [aadhaarguard](https://github.com/Pratix005/aadhaarguard)
+(`pip install aadhaarguard`, no dependencies) finds and redacts 15 kinds of Indian identifiers,
+with checksum validation for Aadhaar, GSTIN and card numbers.
+
 ## SIEM export
 
 ```
